@@ -1,0 +1,8 @@
+{
+  "name": "live-rates-dashboard",
+  "version": "1.0.0",
+  "description": "Live dashboard: crypto, commodities, sports scores, trending movies & songs",
+  "engines": {
+    "node": ">=18"
+  }
+}
