@@ -689,6 +689,8 @@ body {
 .ranked-sub { font-size: 0.68rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ── Zen mode ────────────────────────────────────────────────────────────── */
+.zen-overlay[hidden] { display: none; }
+
 .zen-overlay {
   position: fixed;
   inset: 0;
