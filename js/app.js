@@ -522,35 +522,35 @@ async function resolveRound() {
 // ── Roman Urdu banter (rotates every reload) ──────────────────────────────────
 
 const BANTER = [
-  'Oye hero, phir aagaye rates dekhne? Kaam dhanda nahi hai? 😏',
-  'Itna refresh karne se rate nahi badle ga, sabar karo janab.',
-  'Gold ka rate dekh ke khwaab mat dekho, pehle paise jama karo 😂',
-  'Dollar dekh ke rona band karo, chai pi lo ☕',
-  'Bhai itna mat ghooro screen ko, nazar lag jaye gi market ko.',
-  'Tumhara portfolio bhi cricket team jaisa hai — sirf umeed pe zinda.',
-  'Scroll karte raho, ameer phir bhi nahi ho ge 🤷',
-  'Market giri to giri, tumhari to aadat honi chahiye ab tak.',
-  'Mehngai aur tum — dono control se bahar ho.',
-  'Paisa ped pe nahi ugta, lekin tum yahan roz ug jate ho.',
-  'Kya dekh rahe ho? Boss ne dekh liya to OLX pe CV lagani pare gi.',
-  'BTC tumhare bharose pe nahi chalta, bilkul fikar na karo.',
-  'Aaj phir sona mehnga, aur tum phir wese ke wese 💀',
-  'Rates dekhne se behtar hai rishta dekh lo, ammi khush ho jayen gi.',
-  'Itni research to FSc mein ki hoti to aaj kuch aur hi scene hota.',
+  'Bhenchod itna rate kyun dekh raha hai, paisa hai tere paas? 💀',
+  'Oye chutiye, gold rate dekhne se sona nahi milta.',
+  'Madarchod market phir gir gayi, aur tu phir yahan? 😂',
+  'Randi k tattay, itna refresh kar ke kya milega?',
+  'Jhanton kay nayi, pehle kaam dhanda kar phir rates dekh.',
+  'Bhen kay loray, BTC phir pump hoga — bas 10 saal ruk.',
+  'Lund kay kassayi, dollar itna mehnga aur tu abhi bhi chai pi raha hai?',
+  'Bosri kay, portfolio green hai ya phir wahi loser vibes?',
+  'Bakray kay muh walay, gold khareeda ya sirf dekha?',
+  'Kaali chuchiyon walay burger, itna analysis kar ke bhi zero profit?',
+  'Maa k barway, market ne phir thapa maara tujhe.',
+  'Baaliyon walay tattay walay, ek baar invest kar de bhai.',
+  'Oye maa k laadle, rates dekh ke neend aa gayi kya?',
+  'Tu itna tharki investor hai — sab kuch dekhta hai, kuch karta nahi. 🤡',
+  'Chal nikal yahan se, screen ghoor ke dollar nahi badlega tere liye.',
 ];
 
 const GAME_WIN_LINES = [
-  'Wah ustad! Tukka kya zabardast laga 🎯',
-  'Kya scene hai — Warren Buffett ke bachay!',
-  'Aaj to crystal ball saath laye ho kya? 🔮',
-  'Maan gaye janab, aaj kismat tumhari team mein hai.',
+  'Wah bhenchod! Tukka kya zabardast laga 🎯',
+  'Oye chutiye sahi nikla — Warren Buffett ke baap!',
+  'Teri phati kismat bhi kaam aayi aaj 😂',
+  'Maan gaye ustad, aaj crystal ball saath laye the kya? 🔮',
 ];
 
 const GAME_LOSS_LINES = [
-  'Hogaya na nuqsan? Isi liye ammi mana karti thi 😂',
-  'Bhai rehne do, trading tumhare bas ki baat nahi.',
-  'Market ne tumhe phir se school bhej diya 💀',
-  'Koi nahi, agli dafa coin uchal ke decide karna — zyada accurate hai.',
+  'Hogaya na nuqsan, madarchod? Isi liye investing mat kar.',
+  'Bhai tu randi k tattay jaisi trading karta hai — har baar loss 💀',
+  'Market ne tujhe phir school bheja, chutiye.',
+  'Lund kay kassayi, agli baar coin uchal ke decide karna — zyada accurate hoga.',
 ];
 
 function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
