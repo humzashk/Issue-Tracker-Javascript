@@ -157,18 +157,23 @@ body {
 
 .pk-clock { font-variant-numeric: tabular-nums; color: var(--text-3); font-size: 0.74rem; }
 
+.banter-bar {
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 1rem;
+  text-align: center;
+}
+
 .banter {
   font-size: 0.74rem;
   color: var(--text-2);
   font-style: italic;
-  max-width: 340px;
+  display: inline-block;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-@media (max-width: 1080px) {
-  .banter { display: none; }
+  vertical-align: bottom;
 }
 
 /* ── Pills (level / streak) ─────────────────────────────────────────────── */
@@ -856,13 +861,41 @@ kbd {
   .pk-clock { display: none; }
 }
 
+/* Header wraps to two rows on small screens so the level/streak pills stay visible */
 @media (max-width: 720px) {
-  .header-center { display: none; }
+  .header-inner {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 0;
+    row-gap: 8px;
+  }
+  .header-center {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard { padding: 0 0.9rem; gap: 0.9rem; margin-top: 1.1rem; }
+  .card-content { padding: 0.85rem 0.9rem; }
+  .btn-icon { width: 36px; height: 36px; }
+  .btn-refresh { padding: 9px 14px; }
+  .game-btn { padding: 15px 0; }
+  /* Heavy blur is expensive on mobile GPUs — use lighter blur + more opaque surfaces */
+  .card { backdrop-filter: blur(5px); }
+  .aurora { animation: none; }
+  .toast-stack { left: 16px; right: 16px; bottom: 16px; }
+  .toast { min-width: 0; width: 100%; }
+  .ticker-track { animation-duration: 30s; }
 }
 
 @media (max-width: 480px) {
   .header-controls { gap: 0.4rem; }
   .brand-name { font-size: 1.05rem; }
+  .crypto-grid { grid-template-columns: 1fr; }
+  .zen-stage { width: 190px; height: 190px; }
+  .zen-clock { font-size: 1.7rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
