@@ -1,7 +1,7 @@
 :root {
   --bg: #050510;
-  --surface: #0e0e1f;
-  --surface-2: #161628;
+  --surface: rgba(17, 17, 34, 0.55);
+  --surface-2: rgba(30, 30, 56, 0.65);
   --border: rgba(255, 255, 255, 0.08);
   --text: #e2e2f0;
   --text-2: #9090b8;
@@ -24,6 +24,27 @@ body {
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ── Animated aurora background ─────────────────────────────────────────── */
+.aurora {
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 35% at 20% 25%, rgba(124, 92, 252, 0.16), transparent 70%),
+    radial-gradient(35% 30% at 80% 20%, rgba(34, 211, 164, 0.10), transparent 70%),
+    radial-gradient(45% 40% at 60% 85%, rgba(244, 63, 94, 0.08), transparent 70%),
+    radial-gradient(30% 30% at 35% 70%, rgba(56, 130, 246, 0.10), transparent 70%);
+  animation: aurora-drift 24s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(1); }
+  50%  { transform: translate(3%, -2%) rotate(2deg) scale(1.06); }
+  100% { transform: translate(-3%, 2%) rotate(-2deg) scale(1.03); }
 }
 
 /* ── Header ─────────────────────────────────────────────────────────────── */
@@ -31,7 +52,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(5, 5, 16, 0.88);
+  background: rgba(5, 5, 16, 0.78);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
   padding: 0 1.5rem;
@@ -44,19 +65,39 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
 }
 
-.brand { display: flex; align-items: center; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.brand:active { transform: scale(0.96); }
 .brand-icon { font-size: 1.4rem; }
 .brand-name {
   font-size: 1.2rem;
   font-weight: 700;
   letter-spacing: -0.5px;
-  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+  background: linear-gradient(135deg, #7c5cfc, #a78bfa, #22d3a4);
+  background-size: 200% 200%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  animation: brand-shimmer 6s ease infinite;
 }
+
+@keyframes brand-shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--text-2);
+}
+
+.greeting { font-weight: 600; }
+.pk-clock { font-variant-numeric: tabular-nums; color: var(--text-3); }
 
 .header-controls { display: flex; align-items: center; gap: 1rem; }
 
@@ -94,13 +135,51 @@ body {
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, box-shadow 0.2s;
 }
 
-.btn-refresh:hover { opacity: 0.8; }
+.btn-refresh:hover { opacity: 0.85; box-shadow: 0 0 18px rgba(124, 92, 252, 0.5); }
 .btn-refresh.spinning { animation: spin 0.8s linear infinite; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Ticker tape ────────────────────────────────────────────────────────── */
+.ticker-bar {
+  background: rgba(10, 10, 24, 0.85);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  height: 34px;
+  display: flex;
+  align-items: center;
+}
+
+.ticker-bar:empty, .ticker-track:empty { display: none; }
+
+.ticker-track {
+  display: inline-flex;
+  gap: 2.5rem;
+  white-space: nowrap;
+  animation: ticker-scroll 45s linear infinite;
+  will-change: transform;
+}
+
+.ticker-bar:hover .ticker-track { animation-play-state: paused; }
+
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tick-sym { font-weight: 700; color: var(--text-2); }
+.tick-price { color: var(--text); }
 
 /* ── Dashboard Grid ──────────────────────────────────────────────────────── */
 .dashboard {
@@ -120,16 +199,35 @@ body {
   .dashboard { grid-template-columns: repeat(3, 1fr); }
 }
 
-/* ── Cards ───────────────────────────────────────────────────────────────── */
+/* ── Cards (glassmorphism + staggered entrance) ─────────────────────────── */
 .card {
   background: var(--surface);
+  backdrop-filter: blur(14px);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  transition: border-color 0.2s;
+  transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+  animation: card-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.card:hover { border-color: rgba(124, 92, 252, 0.25); }
+.card:hover {
+  border-color: rgba(124, 92, 252, 0.35);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(124, 92, 252, 0.08);
+}
+
+.card:nth-child(1) { animation-delay: 0.00s; }
+.card:nth-child(2) { animation-delay: 0.07s; }
+.card:nth-child(3) { animation-delay: 0.14s; }
+.card:nth-child(4) { animation-delay: 0.21s; }
+.card:nth-child(5) { animation-delay: 0.28s; }
+.card:nth-child(6) { animation-delay: 0.35s; }
+.card:nth-child(7) { animation-delay: 0.42s; }
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
 .span-2 { grid-column: 1 / -1; }
 
@@ -203,44 +301,111 @@ body {
 
 .empty-message { font-size: 0.8rem; color: var(--text-3); text-align: center; padding: 24px 0; }
 
-/* ── Crypto Grid ─────────────────────────────────────────────────────────── */
+/* ── Crypto grid with sparklines ────────────────────────────────────────── */
 .crypto-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 0.625rem;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.75rem;
 }
 
 .crypto-item {
   background: var(--surface-2);
   border-radius: var(--radius-sm);
-  padding: 0.625rem 0.75rem;
+  padding: 0.75rem 0.85rem;
+  transition: background 0.15s;
+}
+
+.crypto-item:hover { background: rgba(40, 40, 72, 0.8); }
+
+.crypto-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  transition: background 0.15s;
+  margin-bottom: 6px;
 }
 
-.crypto-item:hover { background: #1e1e38; }
-
 .crypto-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.crypto-rank { font-size: 0.65rem; color: var(--text-3); min-width: 16px; }
 
 .crypto-img {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--surface);
 }
 
-.crypto-name-group { min-width: 0; }
-.crypto-symbol { font-size: 0.78rem; font-weight: 700; color: var(--text); text-transform: uppercase; }
-.crypto-name { font-size: 0.63rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90px; }
+.crypto-symbol { font-size: 0.82rem; font-weight: 700; color: var(--text); text-transform: uppercase; }
+.crypto-name { font-size: 0.63rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
 
 .crypto-price-group { text-align: right; flex-shrink: 0; }
-.crypto-price { font-size: 0.82rem; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.crypto-price { font-size: 0.86rem; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .crypto-change { font-size: 0.68rem; font-weight: 600; }
+
+.sparkline { display: block; width: 100%; height: 36px; margin-top: 4px; }
+.sparkline polyline { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.sparkline .spark-fill { stroke: none; opacity: 0.12; }
+
+/* ── Market Mood gauge ──────────────────────────────────────────────────── */
+.mood-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+}
+
+.gauge {
+  position: relative;
+  width: 170px;
+  height: 88px;
+  overflow: hidden;
+}
+
+.gauge-dial {
+  position: absolute;
+  inset: 0 0 -88px 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 270deg,
+    #f43f5e 0deg,
+    #fb923c 45deg,
+    #fbbf24 90deg,
+    #a3e635 135deg,
+    #22d3a4 180deg,
+    transparent 180deg
+  );
+  -webkit-mask: radial-gradient(circle at center, transparent 56px, #000 57px);
+  mask: radial-gradient(circle at center, transparent 56px, #000 57px);
+}
+
+.gauge-needle {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 3px;
+  height: 74px;
+  background: var(--text);
+  border-radius: 3px;
+  transform-origin: bottom center;
+  transition: transform 1.2s cubic-bezier(0.34, 1.4, 0.64, 1);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.35);
+}
+
+.gauge-hub {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.mood-value { font-size: 1.9rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.mood-label { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+.mood-delta { font-size: 0.7rem; color: var(--text-3); }
 
 /* ── Commodities ─────────────────────────────────────────────────────────── */
 .commodity-list { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -315,11 +480,11 @@ body {
   gap: 10px;
   padding: 0.45rem 0.4rem;
   border-radius: 6px;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.15s;
   cursor: default;
 }
 
-.ranked-item:hover { background: var(--surface-2); }
+.ranked-item:hover { background: var(--surface-2); transform: translateX(3px); }
 
 .ranked-num { font-size: 0.75rem; font-weight: 700; color: var(--text-3); min-width: 20px; text-align: center; }
 .ranked-num.top3 { color: var(--yellow); }
@@ -342,6 +507,23 @@ body {
 .negative { color: var(--red); }
 .neutral { color: var(--text-2); }
 
+kbd {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.68rem;
+  font-family: inherit;
+}
+
+/* ── Confetti canvas ─────────────────────────────────────────────────────── */
+#confettiCanvas {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+}
+
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 .site-footer {
   text-align: center;
@@ -351,8 +533,16 @@ body {
 }
 
 /* ── Mobile tweaks ───────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .header-center { display: none; }
+}
+
 @media (max-width: 480px) {
   .header-controls { gap: 0.5rem; }
   .last-updated { display: none; }
   .brand-name { font-size: 1.05rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora, .ticker-track, .card, .brand-name { animation: none; }
 }

@@ -5,7 +5,7 @@ module.exports = async function handler(req, res) {
     const url =
       'https://api.coingecko.com/api/v3/coins/markets' +
       '?vs_currency=pkr&ids=bitcoin,ethereum,ripple,tether' +
-      '&order=market_cap_desc&sparkline=false&price_change_percentage=24h';
+      '&order=market_cap_desc&sparkline=true&price_change_percentage=24h,7d';
 
     const response = await fetch(url, {
       headers: { Accept: 'application/json', 'User-Agent': 'LiveRates/1.0' },

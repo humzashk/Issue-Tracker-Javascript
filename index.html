@@ -8,11 +8,17 @@
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
+    <div class="aurora" aria-hidden="true"></div>
+
     <header class="site-header">
         <div class="header-inner">
-            <div class="brand">
+            <div class="brand" id="brand" title="✨">
                 <span class="brand-icon">📊</span>
                 <span class="brand-name">LiveRates</span>
+            </div>
+            <div class="header-center">
+                <span id="greeting" class="greeting"></span>
+                <span id="pkClock" class="pk-clock"></span>
             </div>
             <div class="header-controls">
                 <div class="live-badge">
@@ -20,10 +26,14 @@
                     LIVE
                 </div>
                 <span id="lastUpdated" class="last-updated"></span>
-                <button id="refreshAll" class="btn-refresh">↻ Refresh</button>
+                <button id="refreshAll" class="btn-refresh" title="Press R">↻ Refresh</button>
             </div>
         </div>
     </header>
+
+    <div class="ticker-bar" id="tickerBar" aria-hidden="true">
+        <div class="ticker-track" id="tickerTrack"></div>
+    </div>
 
     <main class="dashboard">
         <section class="card span-2" id="card-crypto">
@@ -35,6 +45,19 @@
                 <button class="btn-icon" data-refresh="crypto" title="Refresh">↻</button>
             </div>
             <div class="card-content" id="crypto-content">
+                <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+        </section>
+
+        <section class="card" id="card-mood">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <span class="card-icon">🧭</span>
+                    <h2>Market Mood</h2>
+                </div>
+                <button class="btn-icon" data-refresh="mood" title="Refresh">↻</button>
+            </div>
+            <div class="card-content" id="mood-content">
                 <div class="loading-state"><div class="spinner"></div></div>
             </div>
         </section>
@@ -106,7 +129,7 @@
     </main>
 
     <footer class="site-footer">
-        <p>Auto-refreshes every 5 minutes &middot; Market data may be delayed up to 15 minutes</p>
+        <p>Auto-refreshes every 5 minutes &middot; Press <kbd>R</kbd> to refresh &middot; Market data may be delayed up to 15 minutes</p>
     </footer>
 
     <script src="/js/app.js"></script>
