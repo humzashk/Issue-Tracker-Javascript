@@ -1,8 +1,8 @@
+// Gold, Silver, Copper only — prices converted to PKR
 const COMMODITIES = [
-  { id: 'gold',   symbol: 'GC=F',  name: 'Gold',            unit: 'per troy oz' },
-  { id: 'silver', symbol: 'SI=F',  name: 'Silver',          unit: 'per troy oz' },
-  { id: 'copper', symbol: 'HG=F',  name: 'Copper',          unit: 'per pound'   },
-  { id: 'oil',    symbol: 'CL=F',  name: 'Crude Oil (WTI)', unit: 'per barrel'  },
+  { id: 'gold',   symbol: 'GC=F', name: 'Gold',   unit: 'per troy oz' },
+  { id: 'silver', symbol: 'SI=F', name: 'Silver', unit: 'per troy oz' },
+  { id: 'copper', symbol: 'HG=F', name: 'Copper', unit: 'per pound'   },
 ];
 
 async function fetchYahooPrice(symbol) {
@@ -19,22 +19,48 @@ async function fetchYahooPrice(symbol) {
   return meta?.regularMarketPrice ?? meta?.previousClose ?? null;
 }
 
-module.exports = async function handler(req, res) {
-  const results = await Promise.allSettled(
-    COMMODITIES.map(async c => {
-      const price = await fetchYahooPrice(c.symbol);
-      return { id: c.id, name: c.name, unit: c.unit, price };
-    })
-  );
+async function fetchPKRRate() {
+  const res = await fetch('https://open.er-api.com/v6/latest/USD', {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Exchange rate API: ${res.status}`);
+  const json = await res.json();
+  return json?.rates?.PKR ?? null;
+}
 
-  const data = results
+module.exports = async function handler(req, res) {
+  const [pricesResult, pkrResult] = await Promise.allSettled([
+    Promise.allSettled(
+      COMMODITIES.map(async c => {
+        const priceUSD = await fetchYahooPrice(c.symbol);
+        return { id: c.id, name: c.name, unit: c.unit, priceUSD };
+      })
+    ),
+    fetchPKRRate(),
+  ]);
+
+  const pkrRate = pkrResult.status === 'fulfilled' ? pkrResult.value : null;
+  const priceResults = pricesResult.status === 'fulfilled' ? pricesResult.value : [];
+
+  const data = priceResults
     .filter(r => r.status === 'fulfilled')
-    .map(r => r.value);
+    .map(r => {
+      const c = r.value;
+      return {
+        id: c.id,
+        name: c.name,
+        unit: c.unit,
+        price: c.priceUSD != null && pkrRate ? Math.round(c.priceUSD * pkrRate) : null,
+        priceUSD: c.priceUSD,
+        currency: 'PKR',
+        pkrRate,
+      };
+    });
 
   if (!data.length) {
     return res.status(500).json({ success: false, message: 'Could not fetch commodity prices' });
   }
 
   res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-  res.json({ success: true, data, source: 'Yahoo Finance' });
+  res.json({ success: true, data, source: 'Yahoo Finance + ExchangeRate API' });
 };

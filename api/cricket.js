@@ -1,41 +1,51 @@
-// TheSportsDB free tier (API key "3") — IPL league ID 4512
-const LEAGUES = ['4512', '4515'];
-
-async function fetchLeagueEvents(leagueId) {
-  const url = `https://www.thesportsdb.com/api/v1/json/3/eventspastleague.php?id=${leagueId}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`TheSportsDB: ${res.status}`);
-  const json = await res.json();
-  return json?.events ?? [];
-}
-
+// CricAPI v1 — free tier (100 req/day)
+// Add CRICKET_API_KEY in Vercel → Project Settings → Environment Variables
+// Get a free key at: https://cricapi.com
 module.exports = async function handler(req, res) {
+  const apiKey = process.env.CRICKET_API_KEY;
+
+  if (!apiKey) {
+    return res.json({
+      success: false,
+      message:
+        'Cricket data requires an API key. Add CRICKET_API_KEY to your Vercel environment variables. Get a free key (100 req/day) at cricapi.com',
+    });
+  }
+
   try {
-    const results = await Promise.allSettled(LEAGUES.map(fetchLeagueEvents));
-    const allEvents = results
-      .filter(r => r.status === 'fulfilled')
-      .flatMap(r => r.value);
+    const url = `https://api.cricapi.com/v1/currentMatches?apikey=${apiKey}&offset=0`;
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`CricAPI error: ${response.status}`);
 
-    // Sort by date descending, take 8 most recent
-    const sorted = allEvents
-      .filter(e => e.dateEvent)
-      .sort((a, b) => new Date(b.dateEvent) - new Date(a.dateEvent))
-      .slice(0, 8);
+    const json = await response.json();
+    if (json.status !== 'success') throw new Error(json.reason || 'CricAPI returned an error');
 
-    const data = sorted.map(e => ({
-      competition: e.strLeague,
-      date: e.dateEvent,
-      homeTeam: e.strHomeTeam,
-      awayTeam: e.strAwayTeam,
-      score:
-        e.intHomeScore != null && e.intAwayScore != null
-          ? `${e.intHomeScore} – ${e.intAwayScore}`
-          : null,
-      status: e.strStatus || null,
-    }));
+    const matches = json?.data ?? [];
 
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-    res.json({ success: true, data, source: 'TheSportsDB' });
+    const data = matches.slice(0, 8).map(m => {
+      const homeTeam = m.teams?.[0] ?? '';
+      const awayTeam = m.teams?.[1] ?? '';
+
+      let scoreLines = null;
+      if (m.score?.length) {
+        scoreLines = m.score.map(s => {
+          const team = s.inning?.replace(/ Inning \d+$/, '') ?? '';
+          return `${team}: ${s.r}/${s.w} (${parseFloat(s.o).toFixed(1)} ov)`;
+        });
+      }
+
+      return {
+        matchType: (m.matchType ?? '').toUpperCase(),
+        date: m.date ?? '',
+        homeTeam,
+        awayTeam,
+        scoreLines,
+        status: m.status ?? null,
+      };
+    });
+
+    res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
+    res.json({ success: true, data, source: 'CricAPI' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -10,6 +10,11 @@ function fmtPrice(n, digits) {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
+function fmtPKR(n) {
+  if (n == null) return '—';
+  return 'Rs ' + Math.round(n).toLocaleString('en-US');
+}
+
 function fmtChange(pct) {
   if (pct == null) return '';
   const cls = pct > 0 ? 'positive' : pct < 0 ? 'negative' : 'neutral';
@@ -77,8 +82,8 @@ function renderCommodities(data) {
         </div>
       </div>
       <div class="commodity-price-group">
-        <div class="commodity-price">${fmtPrice(c.price, 2)}</div>
-        <div class="commodity-unit">USD</div>
+        <div class="commodity-price">${c.currency === 'PKR' ? fmtPKR(c.price) : fmtPrice(c.price, 2)}</div>
+        <div class="commodity-unit">${c.currency || 'USD'}</div>
       </div>
     </div>
   `).join('');
@@ -124,6 +129,28 @@ function renderRanked(id, data) {
   setHTML(id, `<div class="ranked-list">${items}</div>`);
 }
 
+function renderCricket(data) {
+  if (!data?.length) {
+    setHTML('cricket-content', '<p class="empty-message">No live matches at the moment.</p>');
+    return;
+  }
+
+  const items = data.map(m => `
+    <div class="match-item">
+      <div class="match-meta">${m.matchType || ''}${m.matchType && m.date ? ' · ' : ''}${m.date || ''}</div>
+      <div class="match-score">
+        <span class="match-team home">${m.homeTeam}</span>
+        <span class="match-result">vs</span>
+        <span class="match-team away">${m.awayTeam}</span>
+      </div>
+      ${m.scoreLines?.length ? `<div class="cricket-score">${m.scoreLines.join('<br>')}</div>` : ''}
+      ${m.status ? `<div class="match-status">${m.status}</div>` : ''}
+    </div>
+  `).join('');
+
+  setHTML('cricket-content', `<div class="match-list">${items}</div>`);
+}
+
 // ── Modules ───────────────────────────────────────────────────────────────────
 
 const MODULES = [
@@ -140,7 +167,7 @@ const MODULES = [
   {
     name: 'cricket',
     endpoint: '/api/cricket',
-    render: data => renderMatches('cricket-content', data),
+    render: data => renderCricket(data),
   },
   {
     name: 'football',

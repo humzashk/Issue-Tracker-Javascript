@@ -298,6 +298,14 @@ body {
 .match-status { font-size: 0.63rem; color: var(--text-3); text-align: center; margin-top: 4px; }
 .match-status.live { color: var(--green); }
 
+.cricket-score {
+  font-size: 0.72rem;
+  color: var(--text-2);
+  margin-top: 5px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Ranked List (Movies/Songs) ──────────────────────────────────────────── */
 .ranked-list { display: flex; flex-direction: column; gap: 0.25rem; }
 
