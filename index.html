@@ -42,6 +42,17 @@
 
     <div class="banter-bar"><span class="banter" id="banter"></span></div>
 
+    <div class="search-bar-wrap">
+        <div class="search-inner">
+            <span class="search-icon">🔍</span>
+            <input type="search" id="searchInput" class="search-input"
+                   placeholder="Search crypto, gold, movies, songs, teams…"
+                   autocomplete="off" autocorrect="off" spellcheck="false">
+            <button class="search-clear" id="searchClear" aria-label="Clear">✕</button>
+        </div>
+        <div class="search-results" id="searchResults" hidden></div>
+    </div>
+
     <main class="dashboard">
         <section class="card span-2" id="card-crypto">
             <div class="card-header">

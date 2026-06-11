@@ -252,6 +252,125 @@ body {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Search bar ─────────────────────────────────────────────────────────── */
+.search-bar-wrap {
+  position: sticky;
+  top: 60px;
+  z-index: 90;
+  background: var(--header-bg);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 1.25rem;
+}
+
+.search-inner {
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 16px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-inner:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.search-icon { font-size: 0.9rem; flex-shrink: 0; }
+
+.search-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 0.88rem;
+  padding: 10px 0;
+  min-width: 0;
+}
+
+.search-input::placeholder { color: var(--text-3); }
+
+.search-clear {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 4px;
+  border-radius: 50%;
+  display: none;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.search-clear:hover { color: var(--text); }
+.search-clear.visible { display: block; }
+
+.search-results {
+  max-width: 680px;
+  margin: 8px auto 0;
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+}
+
+.search-group-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 8px 14px 4px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-top: 1px solid var(--border);
+}
+
+.search-result-item:first-child { border-top: none; }
+.search-result-item:hover, .search-result-item.focused { background: var(--surface-2); }
+
+.sri-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface-2);
+}
+
+.sri-emoji { font-size: 1.2rem; width: 32px; text-align: center; flex-shrink: 0; }
+
+.sri-info { min-width: 0; flex: 1; }
+.sri-name { font-size: 0.82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sri-sub  { font-size: 0.68rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.sri-value { font-size: 0.82rem; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; text-align: right; }
+
+.search-empty { padding: 20px; text-align: center; font-size: 0.8rem; color: var(--text-3); }
+
+.search-highlight { color: var(--accent); font-weight: 800; }
+
+/* push sticky search bar down on mobile two-row header */
+@media (max-width: 720px) {
+  .search-bar-wrap { top: 0; position: relative; }
+}
+
 /* ── Ticker tape ────────────────────────────────────────────────────────── */
 .ticker-bar {
   background: var(--header-bg);

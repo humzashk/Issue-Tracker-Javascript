@@ -519,6 +519,147 @@ async function resolveRound() {
   renderLevel();
 }
 
+// ── Search ────────────────────────────────────────────────────────────────────
+
+const searchIndex = { crypto: [], commodities: [], movies: [], music: [], matches: [] };
+
+function indexCrypto(data) {
+  searchIndex.crypto = (data ?? []).map(c => ({
+    type: 'crypto', emoji: null,
+    img: c.image,
+    name: c.name,
+    sub: (c.symbol ?? '').toUpperCase(),
+    value: c.currency === 'PKR' ? fmtPKR(c.current_price) : fmtPrice(c.current_price),
+    change: c.price_change_percentage_24h,
+    keys: [c.name, c.symbol, c.id].join(' ').toLowerCase(),
+  }));
+}
+
+function indexCommodities(data) {
+  const icons = { gold: '🥇', silver: '🥈', copper: '🟤', 'oil-brent': '🛢️', 'oil-wti': '🛢️' };
+  searchIndex.commodities = (data ?? []).map(c => ({
+    type: 'commodity', emoji: icons[c.id] || '📊', img: null,
+    name: c.name,
+    sub: c.unit,
+    value: c.currency === 'PKR' ? fmtPKR(c.price) : fmtPrice(c.price, 2),
+    keys: c.name.toLowerCase(),
+  }));
+}
+
+function indexRanked(type, data) {
+  searchIndex[type] = (data ?? []).map((item, i) => ({
+    type, emoji: type === 'movies' ? '🎬' : '🎵', img: item.image,
+    name: item.title,
+    sub: item.subtitle || '',
+    rank: i + 1,
+    keys: [item.title, item.subtitle].join(' ').toLowerCase(),
+  }));
+}
+
+function indexMatches(type, data) {
+  searchIndex.matches = [
+    ...(searchIndex.matches.filter(m => m.sport !== type)),
+    ...(data ?? []).map(m => ({
+      type: 'match', sport: type,
+      emoji: type === 'cricket' ? '🏏' : '⚽',
+      img: null,
+      name: `${m.homeTeam} vs ${m.awayTeam}`,
+      sub: `${m.competition || ''} · ${m.score || m.status || ''}`.replace(/^[ ·]+|[ ·]+$/g, ''),
+      value: m.score || '',
+      keys: [m.homeTeam, m.awayTeam, m.competition].join(' ').toLowerCase(),
+    })),
+  ];
+}
+
+function highlight(text, q) {
+  if (!q) return text;
+  const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`(${esc})`, 'gi'), '<mark class="search-highlight">$1</mark>');
+}
+
+function runSearch(q) {
+  const box = el('searchResults');
+  if (!box) return;
+  const raw = q.trim().toLowerCase();
+  if (!raw) { box.hidden = true; return; }
+
+  const all = [
+    ...searchIndex.crypto,
+    ...searchIndex.commodities,
+    ...searchIndex.movies,
+    ...searchIndex.music,
+    ...searchIndex.matches,
+  ];
+
+  const hits = all.filter(item => item.keys.includes(raw) || item.keys.split(' ').some(w => w.startsWith(raw)));
+  const hits2 = hits.length ? hits : all.filter(item => item.keys.includes(raw.slice(0, 3)));
+  const results = (hits.length ? hits : hits2).slice(0, 12);
+
+  if (!results.length) {
+    box.innerHTML = `<div class="search-empty">Kuch nahi mila bhai 🤷 — try another term</div>`;
+    box.hidden = false;
+    return;
+  }
+
+  const pct = v => v != null ? `<span class="${v > 0 ? 'positive' : v < 0 ? 'negative' : 'neutral'}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>` : '';
+
+  box.innerHTML = results.map(r => `
+    <div class="search-result-item" data-scroll="${r.type}-card">
+      ${r.img ? `<img class="sri-thumb" src="${r.img}" alt="">` : `<span class="sri-emoji">${r.emoji}</span>`}
+      <div class="sri-info">
+        <div class="sri-name">${highlight(r.name, q.trim())}</div>
+        ${r.sub ? `<div class="sri-sub">${r.sub}</div>` : ''}
+      </div>
+      <div class="sri-value">
+        ${r.value ? r.value : r.rank ? `#${r.rank}` : ''}
+        ${r.change != null ? '<br>' + pct(r.change) : ''}
+      </div>
+    </div>
+  `).join('');
+
+  box.hidden = false;
+}
+
+function initSearch() {
+  const input = el('searchInput');
+  const clearBtn = el('searchClear');
+  const box = el('searchResults');
+  if (!input) return;
+
+  let debounce;
+  input.addEventListener('input', () => {
+    clearBtn.classList.toggle('visible', input.value.length > 0);
+    clearTimeout(debounce);
+    debounce = setTimeout(() => runSearch(input.value), 160);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    clearBtn.classList.remove('visible');
+    box.hidden = true;
+    input.focus();
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-bar-wrap')) box.hidden = true;
+  });
+
+  box.addEventListener('click', e => {
+    const item = e.target.closest('[data-scroll]');
+    if (!item) return;
+    const type = item.dataset.scroll;
+    const card = document.querySelector(`[id*="${type.split('-')[0]}"]`);
+    if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    box.hidden = true;
+    input.value = '';
+    clearBtn.classList.remove('visible');
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { box.hidden = true; input.blur(); }
+  });
+}
+
 // ── Roman Urdu banter (rotates every reload) ──────────────────────────────────
 
 const BANTER = [
@@ -656,6 +797,7 @@ const MODULES = [
       state.crypto = data;
       renderCrypto(data);
       rebuildTicker();
+      indexCrypto(data);
       if (!game.active) renderGameIdle();
     },
   },
@@ -667,27 +809,27 @@ const MODULES = [
   {
     name: 'commodities',
     endpoint: '/api/commodities',
-    render: data => { state.commodities = data; renderCommodities(data); rebuildTicker(); },
+    render: data => { state.commodities = data; renderCommodities(data); rebuildTicker(); indexCommodities(data); },
   },
   {
     name: 'cricket',
     endpoint: '/api/cricket',
-    render: data => renderCricket(data),
+    render: data => { renderCricket(data); indexMatches('cricket', data); },
   },
   {
     name: 'football',
     endpoint: '/api/football',
-    render: data => renderMatches('football-content', data),
+    render: data => { renderMatches('football-content', data); indexMatches('football', data); },
   },
   {
     name: 'movies',
     endpoint: '/api/movies',
-    render: data => renderRanked('movies-content', data),
+    render: data => { renderRanked('movies-content', data); indexRanked('movies', data); },
   },
   {
     name: 'music',
     endpoint: '/api/music',
-    render: data => renderRanked('music-content', data),
+    render: data => { renderRanked('music-content', data); indexRanked('music', data); },
   },
 ];
 
@@ -783,6 +925,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderLevel();
   showBanter();
   renderGameIdle();
+  initSearch();
   loadAll();
   tickClock();
   initTilt();
