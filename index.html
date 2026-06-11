@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="midnight">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,16 +17,22 @@
                 <span class="brand-name">LiveRates</span>
             </div>
             <div class="header-center">
-                <span id="greeting" class="greeting"></span>
+                <span class="banter" id="banter"></span>
+                <div class="pill" id="levelPill" title="Your level — earn XP by visiting, refreshing and predicting">
+                    <span id="levelLabel">Lv 1 · Rookie</span>
+                    <span class="xp-bar"><span class="xp-fill" id="xpFill"></span></span>
+                </div>
+                <div class="pill" id="streakPill" title="Daily visit streak">🔥 <span id="streakCount">1</span></div>
                 <span id="pkClock" class="pk-clock"></span>
             </div>
             <div class="header-controls">
+                <button class="btn-icon" id="themeBtn" title="Switch theme (T)">🎨</button>
+                <button class="btn-icon" id="zenBtn" title="Zen mode (Z)">🧘</button>
                 <div class="live-badge">
                     <span class="live-dot"></span>
                     LIVE
                 </div>
-                <span id="lastUpdated" class="last-updated"></span>
-                <button id="refreshAll" class="btn-refresh" title="Press R">↻ Refresh</button>
+                <button id="refreshAll" class="btn-refresh" title="Press R">↻</button>
             </div>
         </div>
     </header>
@@ -47,6 +53,17 @@
             <div class="card-content" id="crypto-content">
                 <div class="loading-state"><div class="spinner"></div></div>
             </div>
+        </section>
+
+        <section class="card" id="card-game">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <span class="card-icon">🎮</span>
+                    <h2>Predict BTC</h2>
+                </div>
+                <span class="pill pill-sm" id="gamePoints">0 pts</span>
+            </div>
+            <div class="card-content" id="game-content"></div>
         </section>
 
         <section class="card" id="card-mood">
@@ -129,8 +146,20 @@
     </main>
 
     <footer class="site-footer">
-        <p>Auto-refreshes every 5 minutes &middot; Press <kbd>R</kbd> to refresh &middot; Market data may be delayed up to 15 minutes</p>
+        <p>Auto-refreshes every 5 minutes &middot; <kbd>R</kbd> refresh &middot; <kbd>T</kbd> theme &middot; <kbd>Z</kbd> zen &middot; Market data may be delayed up to 15 minutes</p>
     </footer>
+
+    <div class="zen-overlay" id="zenOverlay" hidden>
+        <button class="zen-exit" id="zenExit">✕</button>
+        <div class="zen-stage">
+            <div class="zen-ring" id="zenRing"></div>
+            <div class="zen-phase" id="zenPhase">Breathe in</div>
+        </div>
+        <div class="zen-quote" id="zenQuote"></div>
+        <div class="zen-clock" id="zenClock"></div>
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
 
     <script src="/js/app.js"></script>
 </body>

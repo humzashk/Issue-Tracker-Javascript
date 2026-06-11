@@ -43,14 +43,148 @@ async function apiFetch(endpoint) {
   return json.data;
 }
 
-// Latest data kept around so the ticker tape can rebuild from it
 const state = { crypto: null, commodities: null };
+
+// ── Profile / gamification engine ─────────────────────────────────────────────
+
+const PROFILE_KEY = 'liverates_profile';
+
+const LEVELS = [
+  { xp: 0,    name: 'Rookie' },
+  { xp: 50,   name: 'Trader' },
+  { xp: 150,  name: 'Analyst' },
+  { xp: 300,  name: 'Strategist' },
+  { xp: 500,  name: 'Whale' },
+  { xp: 800,  name: 'Oracle' },
+  { xp: 1200, name: 'Legend' },
+];
+
+const ACHIEVEMENTS = {
+  firstWin:   { emoji: '🩸', title: 'First Blood',   sub: 'Your first correct prediction' },
+  streak3:    { emoji: '🔥', title: 'On Fire',       sub: '3 correct predictions in a row' },
+  streak7:    { emoji: '🧙', title: 'Market Oracle', sub: '7 correct predictions in a row' },
+  points100:  { emoji: '💯', title: 'Centurion',     sub: 'Reached 100 points' },
+  nightOwl:   { emoji: '🦉', title: 'Night Owl',     sub: 'Checking markets after midnight' },
+  visits3:    { emoji: '📅', title: 'Regular',       sub: '3-day visit streak' },
+  zen:        { emoji: '🧘', title: 'Zen Master',    sub: 'Found your inner peace' },
+  themer:     { emoji: '🎨', title: 'Decorator',     sub: 'Changed the theme' },
+  confetti:   { emoji: '🎉', title: 'Party Animal',  sub: 'Found the hidden confetti' },
+};
+
+function loadProfile() {
+  try {
+    return Object.assign(
+      {
+        xp: 0, points: 0, wins: 0, losses: 0,
+        winStreak: 0, bestStreak: 0,
+        lastVisit: null, visitStreak: 0,
+        achievements: [], theme: 'midnight',
+      },
+      JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}')
+    );
+  } catch {
+    return { xp: 0, points: 0, wins: 0, losses: 0, winStreak: 0, bestStreak: 0, lastVisit: null, visitStreak: 0, achievements: [], theme: 'midnight' };
+  }
+}
+
+const profile = loadProfile();
+
+function saveProfile() {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch {}
+}
+
+function levelFor(xp) {
+  let lvl = 0;
+  for (let i = 0; i < LEVELS.length; i++) if (xp >= LEVELS[i].xp) lvl = i;
+  return lvl;
+}
+
+function renderLevel() {
+  const lvl = levelFor(profile.xp);
+  const cur = LEVELS[lvl];
+  const next = LEVELS[lvl + 1];
+  el('levelLabel').textContent = `Lv ${lvl + 1} · ${cur.name}`;
+  const pct = next ? Math.min(100, ((profile.xp - cur.xp) / (next.xp - cur.xp)) * 100) : 100;
+  el('xpFill').style.width = pct + '%';
+  el('streakCount').textContent = profile.visitStreak || 1;
+  el('gamePoints').textContent = `${profile.points} pts`;
+}
+
+function awardXP(n) {
+  const before = levelFor(profile.xp);
+  profile.xp += n;
+  const after = levelFor(profile.xp);
+  saveProfile();
+  renderLevel();
+  if (after > before) {
+    toast('⬆️', 'Level Up!', `You are now a ${LEVELS[after].name}`);
+    chime(660, 880);
+  }
+}
+
+function unlock(id) {
+  if (profile.achievements.includes(id)) return;
+  profile.achievements.push(id);
+  saveProfile();
+  const a = ACHIEVEMENTS[id];
+  if (a) {
+    toast(a.emoji, `Achievement: ${a.title}`, a.sub);
+    chime(523, 784);
+  }
+}
+
+function trackVisit() {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+  if (profile.lastVisit !== today) {
+    const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+    profile.visitStreak = profile.lastVisit === yesterday ? (profile.visitStreak || 0) + 1 : 1;
+    profile.lastVisit = today;
+    saveProfile();
+    awardXP(5);
+    if (profile.visitStreak >= 3) unlock('visits3');
+  }
+  const hour = parseInt(new Date().toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi', hour: '2-digit', hour12: false }), 10);
+  if (hour >= 0 && hour < 5) unlock('nightOwl');
+}
+
+// ── Toasts & sound ────────────────────────────────────────────────────────────
+
+function toast(emoji, title, sub) {
+  const stack = el('toastStack');
+  if (!stack) return;
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span class="toast-emoji">${emoji}</span><div><div class="toast-title">${title}</div><div class="toast-sub">${sub}</div></div>`;
+  stack.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('leaving');
+    setTimeout(() => t.remove(), 400);
+  }, 4200);
+}
+
+function chime(f1, f2) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [f1, f2].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.12);
+      gain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + i * 0.12 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.5);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.12);
+      osc.stop(ctx.currentTime + i * 0.12 + 0.55);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch {}
+}
 
 // ── Sparklines ────────────────────────────────────────────────────────────────
 
 function sparklineSVG(prices, up) {
   if (!prices?.length) return '';
-  // Downsample to ~40 points
   const step = Math.max(1, Math.floor(prices.length / 40));
   const pts = prices.filter((_, i) => i % step === 0);
   const min = Math.min(...pts);
@@ -233,9 +367,283 @@ function rebuildTicker() {
   }
 
   if (!ticks.length) return;
-  // Content duplicated so the -50% translate loops seamlessly
   const half = ticks.join('');
   track.innerHTML = half + half;
+}
+
+// ── Prediction game ───────────────────────────────────────────────────────────
+
+const ROUND_SECONDS = 60;
+const game = { active: false, lockPrice: null, direction: null, timer: null };
+
+async function freshBTC() {
+  const data = await apiFetch(`/api/crypto?cb=${Date.now()}`);
+  const btc = data.find(c => c.symbol?.toLowerCase() === 'btc' || c.id === 'bitcoin');
+  if (!btc) throw new Error('BTC price unavailable');
+  return btc.current_price;
+}
+
+function gameStatsHTML() {
+  const total = profile.wins + profile.losses;
+  const acc = total ? Math.round((profile.wins / total) * 100) : 0;
+  return `
+    <div class="game-stats">
+      <div class="game-stat"><div class="game-stat-value">${profile.winStreak}🔥</div><div class="game-stat-label">Streak</div></div>
+      <div class="game-stat"><div class="game-stat-value">${profile.bestStreak}</div><div class="game-stat-label">Best</div></div>
+      <div class="game-stat"><div class="game-stat-value">${acc}%</div><div class="game-stat-label">Accuracy</div></div>
+    </div>`;
+}
+
+function renderGameIdle(message, cls) {
+  const btc = state.crypto?.find(c => c.id === 'bitcoin' || c.symbol?.toLowerCase() === 'btc');
+  setHTML('game-content', `
+    <div class="game-wrap">
+      <div class="game-price-row">
+        <div>
+          <div class="game-price-label">Bitcoin now</div>
+          <div class="game-price">${btc ? fmtPKR(btc.current_price) : '—'}</div>
+        </div>
+      </div>
+      <div class="game-question">Will BTC be higher or lower in ${ROUND_SECONDS} seconds?</div>
+      <div class="game-buttons">
+        <button class="game-btn up" id="betUp">⬆ Higher</button>
+        <button class="game-btn down" id="betDown">⬇ Lower</button>
+      </div>
+      <div class="game-status ${cls || ''}">${message || 'Win: +10 pts & +10 XP'}</div>
+      ${gameStatsHTML()}
+    </div>
+  `);
+  el('betUp')?.addEventListener('click', () => startRound('up'));
+  el('betDown')?.addEventListener('click', () => startRound('down'));
+}
+
+async function startRound(direction) {
+  if (game.active) return;
+  game.active = true;
+  game.direction = direction;
+
+  setHTML('game-content', `
+    <div class="game-wrap">
+      <div class="game-status">Locking in BTC price…</div>
+    </div>
+  `);
+
+  try {
+    game.lockPrice = await freshBTC();
+  } catch (err) {
+    game.active = false;
+    renderGameIdle('Could not lock price — try again', 'loss');
+    return;
+  }
+
+  let remaining = ROUND_SECONDS;
+
+  const renderCountdown = () => {
+    setHTML('game-content', `
+      <div class="game-wrap">
+        <div class="game-price-row">
+          <div>
+            <div class="game-price-label">Locked at</div>
+            <div class="game-price">${fmtPKR(game.lockPrice)}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="game-price-label">Your call</div>
+            <div class="game-price">${direction === 'up' ? '⬆️' : '⬇️'}</div>
+          </div>
+        </div>
+        <div class="game-countdown"><span class="game-countdown-fill" id="cdFill" style="width:${(remaining / ROUND_SECONDS) * 100}%"></span></div>
+        <div class="game-status">Resolving in ${remaining}s…</div>
+        ${gameStatsHTML()}
+      </div>
+    `);
+  };
+
+  renderCountdown();
+
+  game.timer = setInterval(() => {
+    remaining--;
+    if (remaining > 0) {
+      const fill = el('cdFill');
+      if (fill) fill.style.width = (remaining / ROUND_SECONDS) * 100 + '%';
+      const status = document.querySelector('#game-content .game-status');
+      if (status) status.textContent = `Resolving in ${remaining}s…`;
+    } else {
+      clearInterval(game.timer);
+      resolveRound();
+    }
+  }, 1000);
+}
+
+async function resolveRound() {
+  let endPrice;
+  try {
+    endPrice = await freshBTC();
+  } catch {
+    game.active = false;
+    renderGameIdle('Could not fetch final price — round void', '');
+    return;
+  }
+
+  const diff = endPrice - game.lockPrice;
+  game.active = false;
+
+  if (Math.abs(diff) < 1e-9) {
+    renderGameIdle('Flat! Market didn\'t move — round void', '');
+    return;
+  }
+
+  const wentUp = diff > 0;
+  const won = (wentUp && game.direction === 'up') || (!wentUp && game.direction === 'down');
+  const deltaStr = `${wentUp ? '▲' : '▼'} ${fmtPKR(Math.abs(diff))}`;
+
+  if (won) {
+    profile.wins++;
+    profile.points += 10;
+    profile.winStreak++;
+    profile.bestStreak = Math.max(profile.bestStreak, profile.winStreak);
+    saveProfile();
+    awardXP(10);
+    unlock('firstWin');
+    if (profile.winStreak >= 3) unlock('streak3');
+    if (profile.winStreak >= 7) unlock('streak7');
+    if (profile.points >= 100) unlock('points100');
+    chime(523, 659);
+    renderGameIdle(`${pick(GAME_WIN_LINES)} ${deltaStr} · +10 pts`, 'win');
+  } else {
+    profile.losses++;
+    profile.winStreak = 0;
+    saveProfile();
+    awardXP(2);
+    renderGameIdle(`${pick(GAME_LOSS_LINES)} (${wentUp ? '▲' : '▼'} ${deltaStr.replace(/^[▲▼] /, '')}) · +2 XP`, 'loss');
+  }
+  renderLevel();
+}
+
+// ── Roman Urdu banter (rotates every reload) ──────────────────────────────────
+
+const BANTER = [
+  'Oye hero, phir aagaye rates dekhne? Kaam dhanda nahi hai? 😏',
+  'Itna refresh karne se rate nahi badle ga, sabar karo janab.',
+  'Gold ka rate dekh ke khwaab mat dekho, pehle paise jama karo 😂',
+  'Dollar dekh ke rona band karo, chai pi lo ☕',
+  'Bhai itna mat ghooro screen ko, nazar lag jaye gi market ko.',
+  'Tumhara portfolio bhi cricket team jaisa hai — sirf umeed pe zinda.',
+  'Scroll karte raho, ameer phir bhi nahi ho ge 🤷',
+  'Market giri to giri, tumhari to aadat honi chahiye ab tak.',
+  'Mehngai aur tum — dono control se bahar ho.',
+  'Paisa ped pe nahi ugta, lekin tum yahan roz ug jate ho.',
+  'Kya dekh rahe ho? Boss ne dekh liya to OLX pe CV lagani pare gi.',
+  'BTC tumhare bharose pe nahi chalta, bilkul fikar na karo.',
+  'Aaj phir sona mehnga, aur tum phir wese ke wese 💀',
+  'Rates dekhne se behtar hai rishta dekh lo, ammi khush ho jayen gi.',
+  'Itni research to FSc mein ki hoti to aaj kuch aur hi scene hota.',
+];
+
+const GAME_WIN_LINES = [
+  'Wah ustad! Tukka kya zabardast laga 🎯',
+  'Kya scene hai — Warren Buffett ke bachay!',
+  'Aaj to crystal ball saath laye ho kya? 🔮',
+  'Maan gaye janab, aaj kismat tumhari team mein hai.',
+];
+
+const GAME_LOSS_LINES = [
+  'Hogaya na nuqsan? Isi liye ammi mana karti thi 😂',
+  'Bhai rehne do, trading tumhare bas ki baat nahi.',
+  'Market ne tumhe phir se school bhej diya 💀',
+  'Koi nahi, agli dafa coin uchal ke decide karna — zyada accurate hai.',
+];
+
+function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
+
+function showBanter() {
+  const b = el('banter');
+  if (b) {
+    const line = pick(BANTER);
+    b.textContent = line;
+    b.title = line;
+  }
+}
+
+// ── Zen mode ──────────────────────────────────────────────────────────────────
+
+const ZEN_QUOTES = [
+  '“The stock market is a device for transferring money from the impatient to the patient.” — Warren Buffett',
+  '“In the midst of movement and chaos, keep stillness inside of you.” — Deepak Chopra',
+  '“He who is not contented with what he has, would not be contented with what he would like to have.” — Socrates',
+  '“Patience is bitter, but its fruit is sweet.” — Rumi',
+  '“The best time to plant a tree was 20 years ago. The second best time is now.”',
+  '“Wealth consists not in having great possessions, but in having few wants.” — Epictetus',
+  '“Calm mind brings inner strength and self-confidence.” — Dalai Lama',
+];
+
+let zenPhaseTimer = null;
+
+function enterZen() {
+  const overlay = el('zenOverlay');
+  overlay.hidden = false;
+  el('zenQuote').textContent = ZEN_QUOTES[(Math.random() * ZEN_QUOTES.length) | 0];
+  unlock('zen');
+
+  // Phase text synced to the 11s breathing cycle (4 in · 3 hold · 4 out)
+  const phases = [
+    { label: 'Breathe in', at: 0 },
+    { label: 'Hold', at: 4000 },
+    { label: 'Breathe out', at: 7000 },
+  ];
+  const cycle = () => {
+    for (const p of phases) {
+      setTimeout(() => {
+        if (!overlay.hidden) el('zenPhase').textContent = p.label;
+      }, p.at);
+    }
+  };
+  cycle();
+  zenPhaseTimer = setInterval(cycle, 11000);
+}
+
+function exitZen() {
+  el('zenOverlay').hidden = true;
+  clearInterval(zenPhaseTimer);
+}
+
+// ── Themes ────────────────────────────────────────────────────────────────────
+
+const THEMES = ['midnight', 'ocean', 'forest', 'dawn'];
+
+function applyTheme(name) {
+  document.documentElement.dataset.theme = name;
+  profile.theme = name;
+  saveProfile();
+}
+
+function cycleTheme() {
+  const next = THEMES[(THEMES.indexOf(profile.theme) + 1) % THEMES.length];
+  applyTheme(next);
+  unlock('themer');
+  toast('🎨', 'Theme changed', next.charAt(0).toUpperCase() + next.slice(1));
+}
+
+// ── 3D card tilt + cursor glow ────────────────────────────────────────────────
+
+function initTilt() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (matchMedia('(pointer: coarse)').matches) return;
+
+  document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('mousemove', e => {
+      const r = card.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width;
+      const py = (e.clientY - r.top) / r.height;
+      card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+      card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+      const rx = (0.5 - py) * 4;
+      const ry = (px - 0.5) * 4;
+      card.style.transform = `perspective(900px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';
+    });
+  });
 }
 
 // ── Modules ───────────────────────────────────────────────────────────────────
@@ -244,7 +652,12 @@ const MODULES = [
   {
     name: 'crypto',
     endpoint: '/api/crypto',
-    render: data => { state.crypto = data; renderCrypto(data); rebuildTicker(); },
+    render: data => {
+      state.crypto = data;
+      renderCrypto(data);
+      rebuildTicker();
+      if (!game.active) renderGameIdle();
+    },
   },
   {
     name: 'mood',
@@ -293,46 +706,27 @@ async function loadModule(mod) {
 async function loadAll() {
   const btn = el('refreshAll');
   if (btn) btn.classList.add('spinning');
-
   await Promise.allSettled(MODULES.map(loadModule));
-
   if (btn) btn.classList.remove('spinning');
-  const upd = el('lastUpdated');
-  if (upd) upd.textContent = 'Updated ' + new Date().toLocaleTimeString();
+  awardXP(1);
 }
 
-// ── Pakistan clock & greeting ─────────────────────────────────────────────────
+// ── Clock ─────────────────────────────────────────────────────────────────────
 
 function tickClock() {
-  const now = new Date();
+  const t = new Date().toLocaleTimeString('en-PK', {
+    timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
   const clock = el('pkClock');
-  if (clock) {
-    clock.textContent = now.toLocaleTimeString('en-PK', {
-      timeZone: 'Asia/Karachi',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }) + ' PKT';
-  }
-
-  const greet = el('greeting');
-  if (greet && !greet.textContent) {
-    const hour = parseInt(
-      now.toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi', hour: '2-digit', hour12: false }),
-      10
-    );
-    greet.textContent =
-      hour < 5 ? '🌙 Working late?' :
-      hour < 12 ? '☀️ Subah bakhair!' :
-      hour < 17 ? '👋 Good afternoon!' :
-      hour < 21 ? '🌆 Good evening!' :
-      '🌙 Shab bakhair!';
-  }
+  if (clock) clock.textContent = t + ' PKT';
+  const zc = el('zenClock');
+  if (zc && !el('zenOverlay').hidden) zc.textContent = t;
 }
 
-// ── Confetti easter egg (click the logo) ──────────────────────────────────────
+// ── Confetti ──────────────────────────────────────────────────────────────────
 
 function burstConfetti() {
+  unlock('confetti');
   let canvas = el('confettiCanvas');
   if (!canvas) {
     canvas = document.createElement('canvas');
@@ -384,19 +778,33 @@ function burstConfetti() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(THEMES.includes(profile.theme) ? profile.theme : 'midnight');
+  trackVisit();
+  renderLevel();
+  showBanter();
+  renderGameIdle();
   loadAll();
   tickClock();
+  initTilt();
+
   setInterval(tickClock, 1000);
   setInterval(loadAll, 5 * 60 * 1000);
 
   el('refreshAll')?.addEventListener('click', loadAll);
   el('brand')?.addEventListener('click', burstConfetti);
+  el('themeBtn')?.addEventListener('click', cycleTheme);
+  el('zenBtn')?.addEventListener('click', enterZen);
+  el('zenExit')?.addEventListener('click', exitZen);
 
   document.addEventListener('keydown', e => {
-    if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      const tag = document.activeElement?.tagName;
-      if (tag !== 'INPUT' && tag !== 'TEXTAREA') loadAll();
-    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const k = e.key.toLowerCase();
+    if (k === 'r') loadAll();
+    else if (k === 't') cycleTheme();
+    else if (k === 'z') el('zenOverlay').hidden ? enterZen() : exitZen();
+    else if (k === 'escape' && !el('zenOverlay').hidden) exitZen();
   });
 
   document.addEventListener('click', e => {
