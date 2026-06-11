@@ -12,7 +12,8 @@ function fmtPrice(n, digits) {
 
 function fmtPKR(n) {
   if (n == null) return '—';
-  return 'Rs ' + Math.round(n).toLocaleString('en-US');
+  const d = n < 1000 ? 2 : 0;
+  return 'Rs ' + n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
 function fmtChange(pct) {
@@ -58,7 +59,7 @@ function renderCrypto(data) {
         </div>
       </div>
       <div class="crypto-price-group">
-        <div class="crypto-price">${fmtPrice(c.current_price)}</div>
+        <div class="crypto-price">${c.currency === 'PKR' ? fmtPKR(c.current_price) : fmtPrice(c.current_price)}</div>
         <div class="crypto-change">${fmtChange(c.price_change_percentage_24h)}</div>
       </div>
     </div>
@@ -70,7 +71,7 @@ function renderCrypto(data) {
 function renderCommodities(data) {
   if (!data?.length) { showError('commodities-content', 'No data returned'); return; }
 
-  const icons = { gold: '🥇', silver: '🥈', copper: '🟤', oil: '🛢️' };
+  const icons = { gold: '🥇', silver: '🥈', copper: '🟤', 'oil-brent': '🛢️', 'oil-wti': '🛢️' };
 
   const items = data.map(c => `
     <div class="commodity-item">
