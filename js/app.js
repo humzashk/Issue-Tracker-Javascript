@@ -4,6 +4,18 @@
 
 function el(id) { return document.getElementById(id); }
 
+// Escape any external/API-sourced string before it goes into innerHTML
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+// Only allow https URLs in src attributes
+function safeUrl(u) {
+  return typeof u === 'string' && /^https:\/\//i.test(u) ? esc(u) : '';
+}
+
 function fmtPrice(n, digits) {
   if (n == null) return '—';
   const d = digits != null ? digits : n >= 1000 ? 2 : n >= 1 ? 4 : 6;
@@ -32,7 +44,7 @@ function showLoading(id) {
 }
 
 function showError(id, msg) {
-  setHTML(id, `<div class="error-state"><span class="error-icon">⚠️</span><p class="error-message">${msg}</p></div>`);
+  setHTML(id, `<div class="error-state"><span class="error-icon">⚠️</span><p class="error-message">${esc(msg)}</p></div>`);
 }
 
 async function apiFetch(endpoint) {
@@ -220,10 +232,10 @@ function renderCrypto(data) {
     <div class="crypto-item">
       <div class="crypto-top">
         <div class="crypto-info">
-          <img class="crypto-img" src="${c.image}" alt="${c.name}" width="26" height="26" loading="lazy">
+          <img class="crypto-img" src="${safeUrl(c.image)}" alt="${esc(c.name)}" width="26" height="26" loading="lazy">
           <div>
-            <div class="crypto-symbol">${c.symbol}</div>
-            <div class="crypto-name">${c.name}</div>
+            <div class="crypto-symbol">${esc(c.symbol)}</div>
+            <div class="crypto-name">${esc(c.name)}</div>
           </div>
         </div>
         <div class="crypto-price-group">
@@ -248,8 +260,8 @@ function renderCommodities(data) {
       <div class="commodity-name-group">
         <span class="commodity-icon">${icons[c.id] || '📊'}</span>
         <div>
-          <div class="commodity-label">${c.name}</div>
-          <div class="commodity-sub">${c.unit}</div>
+          <div class="commodity-label">${esc(c.name)}</div>
+          <div class="commodity-sub">${esc(c.unit)}</div>
         </div>
       </div>
       <div class="commodity-price-group">
@@ -279,7 +291,7 @@ function renderMood(data) {
         <div class="gauge-hub"></div>
       </div>
       <div class="mood-value" style="color:${color}">${v} ${emoji}</div>
-      <div class="mood-label" style="color:${color}">${data.label}</div>
+      <div class="mood-label" style="color:${color}">${esc(data.label)}</div>
       ${delta != null ? `<div class="mood-delta">${delta > 0 ? '▲' : delta < 0 ? '▼' : '—'} ${Math.abs(delta)} vs yesterday</div>` : ''}
     </div>
   `);
@@ -291,10 +303,10 @@ function renderRanked(id, data) {
   const items = data.map((item, i) => `
     <div class="ranked-item">
       <span class="ranked-num${i < 3 ? ' top3' : ''}">${i + 1}</span>
-      ${item.image ? `<img class="ranked-thumb" src="${item.image}" alt="" width="36" height="36" loading="lazy">` : ''}
+      ${safeUrl(item.image) ? `<img class="ranked-thumb" src="${safeUrl(item.image)}" alt="" width="36" height="36" loading="lazy">` : ''}
       <div class="ranked-info">
-        <div class="ranked-title">${item.title}</div>
-        ${item.subtitle ? `<div class="ranked-sub">${item.subtitle}</div>` : ''}
+        <div class="ranked-title">${esc(item.title)}</div>
+        ${item.subtitle ? `<div class="ranked-sub">${esc(item.subtitle)}</div>` : ''}
       </div>
     </div>
   `).join('');
@@ -343,7 +355,7 @@ function rebuildTicker() {
     const pct = c.price_change_percentage_24h;
     const cls = pct > 0 ? 'positive' : pct < 0 ? 'negative' : 'neutral';
     ticks.push(
-      `<span class="tick"><span class="tick-sym">${(c.symbol || '').toUpperCase()}</span>` +
+      `<span class="tick"><span class="tick-sym">${esc((c.symbol || '').toUpperCase())}</span>` +
       `<span class="tick-price">${fmtPKR(c.current_price)}</span>` +
       `<span class="${cls}">${pct != null ? (pct > 0 ? '▲' : pct < 0 ? '▼' : '') + Math.abs(pct).toFixed(2) + '%' : ''}</span></span>`
     );
@@ -351,7 +363,7 @@ function rebuildTicker() {
 
   for (const c of state.commodities ?? []) {
     ticks.push(
-      `<span class="tick"><span class="tick-sym">${c.name.toUpperCase()}</span>` +
+      `<span class="tick"><span class="tick-sym">${esc(c.name.toUpperCase())}</span>` +
       `<span class="tick-price">${c.currency === 'PKR' ? fmtPKR(c.price) : fmtPrice(c.price, 2)}</span></span>`
     );
   }
@@ -580,10 +592,10 @@ function runSearch(q) {
 
   box.innerHTML = results.map(r => `
     <div class="search-result-item" data-scroll="${r.type}-card">
-      ${r.img ? `<img class="sri-thumb" src="${r.img}" alt="">` : `<span class="sri-emoji">${r.emoji}</span>`}
+      ${safeUrl(r.img) ? `<img class="sri-thumb" src="${safeUrl(r.img)}" alt="">` : `<span class="sri-emoji">${r.emoji}</span>`}
       <div class="sri-info">
-        <div class="sri-name">${highlight(r.name, q.trim())}</div>
-        ${r.sub ? `<div class="sri-sub">${r.sub}</div>` : ''}
+        <div class="sri-name">${highlight(esc(r.name), q.trim())}</div>
+        ${r.sub ? `<div class="sri-sub">${esc(r.sub)}</div>` : ''}
       </div>
       <div class="sri-value">
         ${r.value ? r.value : r.rank ? `#${r.rank}` : ''}

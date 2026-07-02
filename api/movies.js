@@ -53,6 +53,7 @@ module.exports = async function handler(req, res) {
       source: apiKey ? 'Apple iTunes + OMDb' : 'Apple iTunes (set OMDB_API_KEY for ratings)',
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Data source is temporarily unavailable' });
   }
 };

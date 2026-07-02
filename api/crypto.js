@@ -18,6 +18,7 @@ module.exports = async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
     res.json({ success: true, data, source: 'CoinGecko' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Data source is temporarily unavailable' });
   }
 };

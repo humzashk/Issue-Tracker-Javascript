@@ -17,6 +17,7 @@ module.exports = async function handler(req, res) {
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=7200');
     res.json({ success: true, data, source: 'Apple iTunes' });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Data source is temporarily unavailable' });
   }
 };

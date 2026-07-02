@@ -21,6 +21,7 @@ module.exports = async function handler(req, res) {
       source: 'alternative.me',
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Data source is temporarily unavailable' });
   }
 };
