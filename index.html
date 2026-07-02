@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LiveRates Dashboard</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
-    <link rel="stylesheet" href="/css/styles.css?v=11">
+    <link rel="stylesheet" href="/css/styles.css?v=12">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
@@ -134,11 +134,37 @@
             <div class="card-header">
                 <div class="card-title-group">
                     <span class="card-icon">🎵</span>
-                    <h2>Top 10 Songs</h2>
+                    <h2>Global Top 10 Songs</h2>
                 </div>
                 <button class="btn-icon" data-refresh="music" title="Refresh">↻</button>
             </div>
             <div class="card-content" id="music-content">
+                <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+        </section>
+
+        <section class="card" id="card-musicpk">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <span class="card-icon">🇵🇰</span>
+                    <h2>Pakistan Trending Songs</h2>
+                </div>
+                <button class="btn-icon" data-refresh="musicpk" title="Refresh">↻</button>
+            </div>
+            <div class="card-content" id="musicpk-content">
+                <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+        </section>
+
+        <section class="card" id="card-reels">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <span class="card-icon">📱</span>
+                    <h2>Reels Trending Audio</h2>
+                </div>
+                <button class="btn-icon" data-refresh="reels" title="Refresh">↻</button>
+            </div>
+            <div class="card-content" id="reels-content">
                 <div class="loading-state"><div class="spinner"></div></div>
             </div>
         </section>
@@ -160,6 +186,6 @@
 
     <div class="toast-stack" id="toastStack"></div>
 
-    <script src="/js/app.js?v=11"></script>
+    <script src="/js/app.js?v=12"></script>
 </body>
 </html>

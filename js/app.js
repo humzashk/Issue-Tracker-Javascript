@@ -524,7 +524,7 @@ async function resolveRound() {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
-const searchIndex = { crypto: [], commodities: [], movies: [], music: [] };
+const searchIndex = { crypto: [], commodities: [], movies: [], music: [], musicpk: [], reels: [] };
 
 function indexCrypto(data) {
   searchIndex.crypto = (data ?? []).map(c => ({
@@ -577,6 +577,8 @@ function runSearch(q) {
     ...searchIndex.commodities,
     ...searchIndex.movies,
     ...searchIndex.music,
+    ...searchIndex.musicpk,
+    ...searchIndex.reels,
   ];
 
   const hits = all.filter(item => item.keys.includes(raw) || item.keys.split(' ').some(w => w.startsWith(raw)));
@@ -833,6 +835,16 @@ const MODULES = [
     name: 'music',
     endpoint: '/api/music',
     render: data => { renderRanked('music-content', data); indexRanked('music', data); },
+  },
+  {
+    name: 'musicpk',
+    endpoint: '/api/music-pk',
+    render: data => { renderRanked('musicpk-content', data); indexRanked('musicpk', data); },
+  },
+  {
+    name: 'reels',
+    endpoint: '/api/reels',
+    render: data => { renderRanked('reels-content', data); indexRanked('reels', data); },
   },
 ];
 
