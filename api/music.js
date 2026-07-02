@@ -1,21 +1,34 @@
-// Apple iTunes public RSS — no API key required
+// Top 10 trending songs — Apple Music "most played" chart (live streaming
+// data, unlike the old iTunes RSS which reflected purchases and skewed old).
+// Tries the Pakistan storefront first, falls back to global US chart.
+async function fetchChart(storefront) {
+  const url = `https://rss.applemarketingtools.com/api/v2/${storefront}/music/most-played/10/songs.json`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Apple Music chart (${storefront}): ${res.status}`);
+  const json = await res.json();
+  return json?.feed?.results ?? [];
+}
+
 module.exports = async function handler(req, res) {
   try {
-    const url = 'https://itunes.apple.com/us/rss/topsongs/limit=10/json';
-    const response = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error(`iTunes error: ${response.status}`);
+    let results = [];
+    let market = 'PK';
+    try {
+      results = await fetchChart('pk');
+    } catch {}
+    if (!results.length) {
+      results = await fetchChart('us');
+      market = 'US';
+    }
 
-    const json = await response.json();
-    const entries = json?.feed?.entry ?? [];
-
-    const data = entries.map(e => ({
-      title: e['im:name']?.label ?? '',
-      subtitle: e['im:artist']?.label ?? '',
-      image: e['im:image']?.[2]?.label ?? e['im:image']?.[0]?.label ?? null,
+    const data = results.map(s => ({
+      title: s.name ?? '',
+      subtitle: s.artistName ?? '',
+      image: s.artworkUrl100 ?? null,
     }));
 
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=7200');
-    res.json({ success: true, data, source: 'Apple iTunes' });
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
+    res.json({ success: true, data, source: `Apple Music Most Played (${market})` });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Data source is temporarily unavailable' });

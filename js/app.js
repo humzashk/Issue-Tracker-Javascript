@@ -240,6 +240,7 @@ function renderCrypto(data) {
         </div>
         <div class="crypto-price-group">
           <div class="crypto-price">${c.currency === 'PKR' ? fmtPKR(c.current_price) : fmtPrice(c.current_price)}</div>
+          ${c.usd_price != null ? `<div class="crypto-price-usd">${fmtPrice(c.usd_price, 2)}</div>` : ''}
           <div class="crypto-change">${fmtChange(c.price_change_percentage_24h)}</div>
         </div>
       </div>
