@@ -43,7 +43,7 @@ async function apiFetch(endpoint) {
   return json.data;
 }
 
-const state = { crypto: null, commodities: null };
+const state = { crypto: null, commodities: null, forex: null };
 
 // ── Profile / gamification engine ─────────────────────────────────────────────
 
@@ -69,6 +69,10 @@ const ACHIEVEMENTS = {
   zen:        { emoji: '🧘', title: 'Zen Master',    sub: 'Found your inner peace' },
   themer:     { emoji: '🎨', title: 'Decorator',     sub: 'Changed the theme' },
   confetti:   { emoji: '🎉', title: 'Party Animal',  sub: 'Found the hidden confetti' },
+  konami:     { emoji: '🕹️', title: 'Cheat Code',    sub: '↑↑↓↓←→←→BA — old school respect' },
+  moon:       { emoji: '🚀', title: 'To The Moon',   sub: 'You typed the magic word' },
+  patriot:    { emoji: '🇵🇰', title: 'Pakistan Zindabad', sub: 'Searched for the homeland' },
+  diamond:    { emoji: '💎', title: 'Diamond Hands', sub: 'Tapped BTC 5 times — never selling' },
 };
 
 function loadProfile() {
@@ -281,49 +285,6 @@ function renderMood(data) {
   `);
 }
 
-function renderMatches(id, data) {
-  if (!data?.length) {
-    setHTML(id, '<p class="empty-message">No recent matches found.</p>');
-    return;
-  }
-
-  const items = data.map(m => `
-    <div class="match-item">
-      <div class="match-meta">${m.competition || ''}${m.competition && m.date ? ' · ' : ''}${m.date || ''}</div>
-      <div class="match-score">
-        <span class="match-team home">${m.homeTeam}</span>
-        <span class="match-result">${m.score || 'vs'}</span>
-        <span class="match-team away">${m.awayTeam}</span>
-      </div>
-      ${m.status ? `<div class="match-status${m.status === 'In Progress' ? ' live' : ''}">${m.status}</div>` : ''}
-    </div>
-  `).join('');
-
-  setHTML(id, `<div class="match-list">${items}</div>`);
-}
-
-function renderCricket(data) {
-  if (!data?.length) {
-    setHTML('cricket-content', '<p class="empty-message">No live matches at the moment.</p>');
-    return;
-  }
-
-  const items = data.map(m => `
-    <div class="match-item">
-      <div class="match-meta">${m.matchType || ''}${m.matchType && m.date ? ' · ' : ''}${m.date || ''}</div>
-      <div class="match-score">
-        <span class="match-team home">${m.homeTeam}</span>
-        <span class="match-result">vs</span>
-        <span class="match-team away">${m.awayTeam}</span>
-      </div>
-      ${m.scoreLines?.length ? `<div class="cricket-score">${m.scoreLines.join('<br>')}</div>` : ''}
-      ${m.status ? `<div class="match-status">${m.status}</div>` : ''}
-    </div>
-  `).join('');
-
-  setHTML('cricket-content', `<div class="match-list">${items}</div>`);
-}
-
 function renderRanked(id, data) {
   if (!data?.length) { setHTML(id, '<p class="empty-message">No data available.</p>'); return; }
 
@@ -339,6 +300,35 @@ function renderRanked(id, data) {
   `).join('');
 
   setHTML(id, `<div class="ranked-list">${items}</div>`);
+}
+
+function renderConverter(data) {
+  if (!data?.usdToPkr) { showError('converter-content', 'Rate unavailable'); return; }
+  state.forex = data;
+  setHTML('converter-content', `
+    <div class="conv-wrap">
+      <div class="conv-rate">1 USD = <strong>${data.usdToPkr.toFixed(2)} PKR</strong></div>
+      <div class="conv-row"><label>USD</label><input class="conv-input" id="convUsd" type="number" inputmode="decimal" placeholder="1.00"></div>
+      <button class="conv-swap" id="convSwap" title="Swap values">⇅</button>
+      <div class="conv-row"><label>PKR</label><input class="conv-input" id="convPkr" type="number" inputmode="decimal" placeholder="${data.usdToPkr.toFixed(2)}"></div>
+      ${data.updated ? `<div class="conv-updated">Rate updated: ${data.updated}</div>` : ''}
+    </div>
+  `);
+  const usd = el('convUsd'), pkr = el('convPkr');
+  usd.addEventListener('input', () => {
+    const v = parseFloat(usd.value);
+    pkr.value = Number.isFinite(v) ? (v * state.forex.usdToPkr).toFixed(2) : '';
+  });
+  pkr.addEventListener('input', () => {
+    const v = parseFloat(pkr.value);
+    usd.value = Number.isFinite(v) ? (v * state.forex.pkrToUsd).toFixed(4) : '';
+  });
+  el('convSwap').addEventListener('click', () => {
+    const a = usd.value;
+    usd.value = pkr.value;
+    pkr.value = a;
+    usd.dispatchEvent(new Event('input'));
+  });
 }
 
 // ── Ticker tape ───────────────────────────────────────────────────────────────
@@ -521,7 +511,7 @@ async function resolveRound() {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
-const searchIndex = { crypto: [], commodities: [], movies: [], music: [], matches: [] };
+const searchIndex = { crypto: [], commodities: [], movies: [], music: [] };
 
 function indexCrypto(data) {
   searchIndex.crypto = (data ?? []).map(c => ({
@@ -556,21 +546,6 @@ function indexRanked(type, data) {
   }));
 }
 
-function indexMatches(type, data) {
-  searchIndex.matches = [
-    ...(searchIndex.matches.filter(m => m.sport !== type)),
-    ...(data ?? []).map(m => ({
-      type: 'match', sport: type,
-      emoji: type === 'cricket' ? '🏏' : '⚽',
-      img: null,
-      name: `${m.homeTeam} vs ${m.awayTeam}`,
-      sub: `${m.competition || ''} · ${m.score || m.status || ''}`.replace(/^[ ·]+|[ ·]+$/g, ''),
-      value: m.score || '',
-      keys: [m.homeTeam, m.awayTeam, m.competition].join(' ').toLowerCase(),
-    })),
-  ];
-}
-
 function highlight(text, q) {
   if (!q) return text;
   const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -582,13 +557,13 @@ function runSearch(q) {
   if (!box) return;
   const raw = q.trim().toLowerCase();
   if (!raw) { box.hidden = true; return; }
+  if (raw === 'pakistan') pakistanSurprise();
 
   const all = [
     ...searchIndex.crypto,
     ...searchIndex.commodities,
     ...searchIndex.movies,
     ...searchIndex.music,
-    ...searchIndex.matches,
   ];
 
   const hits = all.filter(item => item.keys.includes(raw) || item.keys.split(' ').some(w => w.startsWith(raw)));
@@ -678,6 +653,14 @@ const BANTER = [
   'Oye maa k laadle, rates dekh ke neend aa gayi kya?',
   'Tu itna tharki investor hai — sab kuch dekhta hai, kuch karta nahi. 🤡',
   'Chal nikal yahan se, screen ghoor ke dollar nahi badlega tere liye.',
+  'Choot ky shehzaday, aaj phir khaali jeb ke saath rates dekhne aa gaya?',
+  'Barway ki nasal, kabhi kuch khareed bhi liya kar, sirf dekhta hi rehta hai.',
+  'Chooton k piyassey, market teri wajah se nahi sudhri.',
+  'Lund jaise shakal walay, tera portfolio bhi teri shakal jaisa hai.',
+  'Kaali tatton key sharabi barway, hosh mein aa ke trade kiya kar.',
+  'Chuchiyon chhatney key expert, kabhi candlestick chart bhi chhaat le.',
+  'Oye choot ky shehzaday, BTC tere baap ka nahi jo roz check karta hai.',
+  'Barway ki nasal, itni mehnat naukri pe karta to CEO hota ab tak.',
 ];
 
 const GAME_WIN_LINES = [
@@ -692,14 +675,26 @@ const GAME_LOSS_LINES = [
   'Bhai tu randi k tattay jaisi trading karta hai — har baar loss 💀',
   'Market ne tujhe phir school bheja, chutiye.',
   'Lund kay kassayi, agli baar coin uchal ke decide karna — zyada accurate hoga.',
+  'Choot ky shehzaday, phir loss? Wah, consistency to hai teri mein.',
+  'Barway ki nasal, tujhse behtar to tossed coin predict karta hai.',
+  'Chooton k piyassey, trading chhor de, tere bas ki nahi.',
+  'Kaali tatton key sharabi barway, nasha utaar ke khela kar.',
 ];
 
 function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
 
 function showBanter() {
   const b = el('banter');
-  if (b) {
-    const line = pick(BANTER);
+  if (!b) return;
+  const line = '💬 ' + pick(BANTER);
+  if (b.textContent) {
+    b.classList.add('fading');
+    setTimeout(() => {
+      b.textContent = line;
+      b.title = line;
+      b.classList.remove('fading');
+    }, 400);
+  } else {
     b.textContent = line;
     b.title = line;
   }
@@ -812,14 +807,9 @@ const MODULES = [
     render: data => { state.commodities = data; renderCommodities(data); rebuildTicker(); indexCommodities(data); },
   },
   {
-    name: 'cricket',
-    endpoint: '/api/cricket',
-    render: data => { renderCricket(data); indexMatches('cricket', data); },
-  },
-  {
-    name: 'football',
-    endpoint: '/api/football',
-    render: data => { renderMatches('football-content', data); indexMatches('football', data); },
+    name: 'converter',
+    endpoint: '/api/forex',
+    render: data => renderConverter(data),
   },
   {
     name: 'movies',
@@ -867,8 +857,7 @@ function tickClock() {
 
 // ── Confetti ──────────────────────────────────────────────────────────────────
 
-function burstConfetti() {
-  unlock('confetti');
+function burstConfetti(palette) {
   let canvas = el('confettiCanvas');
   if (!canvas) {
     canvas = document.createElement('canvas');
@@ -878,7 +867,7 @@ function burstConfetti() {
   canvas.width = innerWidth;
   canvas.height = innerHeight;
   const ctx = canvas.getContext('2d');
-  const colors = ['#7c5cfc', '#22d3a4', '#fbbf24', '#f43f5e', '#38bdf8', '#a78bfa'];
+  const colors = Array.isArray(palette) && palette.length ? palette : ['#7c5cfc', '#22d3a4', '#fbbf24', '#f43f5e', '#38bdf8', '#a78bfa'];
   const parts = Array.from({ length: 140 }, () => ({
     x: innerWidth / 2 + (Math.random() - 0.5) * 120,
     y: 70,
@@ -917,6 +906,92 @@ function burstConfetti() {
   step();
 }
 
+// ── Easter eggs ─────────────────────────────────────────────────────────────
+
+function matrixRain(duration) {
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:fixed;inset:0;z-index:998;pointer-events:none;';
+  document.body.appendChild(canvas);
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+  const ctx = canvas.getContext('2d');
+  const cols = Math.floor(innerWidth / 16);
+  const drops = Array(cols).fill(0);
+  const glyphs = 'アイウエオ01₿$R₨XRPETH';
+  const iv = setInterval(() => {
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#22d3a4';
+    ctx.font = '15px monospace';
+    for (let i = 0; i < drops.length; i++) {
+      const ch = glyphs[(Math.random() * glyphs.length) | 0];
+      ctx.fillText(ch, i * 16, drops[i] * 16);
+      drops[i] = drops[i] * 16 > canvas.height && Math.random() > 0.975 ? 0 : drops[i] + 1;
+    }
+  }, 50);
+  setTimeout(() => { clearInterval(iv); canvas.remove(); }, duration || 5000);
+}
+
+function launchRocket() {
+  const r = document.createElement('div');
+  r.textContent = '🚀';
+  r.style.cssText = 'position:fixed;left:-70px;bottom:-70px;font-size:3.2rem;z-index:998;pointer-events:none;transition:transform 2.2s ease-in;';
+  document.body.appendChild(r);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    r.style.transform = `translate(${innerWidth + 180}px, -${innerHeight + 180}px)`;
+  }));
+  setTimeout(() => r.remove(), 2600);
+}
+
+let pakCooldown = false;
+function pakistanSurprise() {
+  if (pakCooldown) return;
+  pakCooldown = true;
+  setTimeout(() => { pakCooldown = false; }, 60000);
+  unlock('patriot');
+  burstConfetti(['#01411C', '#ffffff', '#2ecc71', '#01411C', '#ffffff']);
+  toast('🇵🇰', 'Pakistan Zindabad!', 'Dil dil Pakistan ❤️');
+  chime(392, 523);
+}
+
+function initEasterEggs() {
+  const KONAMI = 'arrowup,arrowup,arrowdown,arrowdown,arrowleft,arrowright,arrowleft,arrowright,b,a';
+  let keyBuf = [];
+  document.addEventListener('keydown', e => {
+    keyBuf.push(e.key.toLowerCase());
+    if (keyBuf.length > 12) keyBuf.shift();
+    if (keyBuf.slice(-10).join(',') === KONAMI) {
+      keyBuf = [];
+      unlock('konami');
+      matrixRain(5000);
+      chime(392, 523);
+    }
+    if (keyBuf.slice(-4).join('') === 'moon') {
+      keyBuf = [];
+      unlock('moon');
+      launchRocket();
+      toast('🚀', 'To the moon!', 'BTC bhi khush ho gaya');
+    }
+  });
+
+  let btcClicks = 0, btcTimer;
+  document.addEventListener('click', e => {
+    const item = e.target.closest('.crypto-item');
+    if (!item) return;
+    const sym = item.querySelector('.crypto-symbol')?.textContent?.trim().toLowerCase();
+    if (sym !== 'btc') return;
+    btcClicks++;
+    clearTimeout(btcTimer);
+    btcTimer = setTimeout(() => { btcClicks = 0; }, 3000);
+    if (btcClicks >= 5) {
+      btcClicks = 0;
+      unlock('diamond');
+      toast('💎🙌', 'Diamond Hands', 'HODL till death!');
+      chime(523, 659);
+    }
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -929,12 +1004,14 @@ document.addEventListener('DOMContentLoaded', () => {
   loadAll();
   tickClock();
   initTilt();
+  initEasterEggs();
 
   setInterval(tickClock, 1000);
   setInterval(loadAll, 5 * 60 * 1000);
+  setInterval(showBanter, 45 * 1000);
 
   el('refreshAll')?.addEventListener('click', loadAll);
-  el('brand')?.addEventListener('click', burstConfetti);
+  el('brand')?.addEventListener('click', () => { unlock('confetti'); burstConfetti(); });
   el('themeBtn')?.addEventListener('click', cycleTheme);
   el('zenBtn')?.addEventListener('click', enterZen);
   el('zenExit')?.addEventListener('click', exitZen);

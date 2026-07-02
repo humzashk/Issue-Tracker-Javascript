@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LiveRates Dashboard</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
-    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/styles.css?v=9">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
@@ -46,7 +46,7 @@
         <div class="search-inner">
             <span class="search-icon">🔍</span>
             <input type="search" id="searchInput" class="search-input"
-                   placeholder="Search crypto, gold, movies, songs, teams…"
+                   placeholder="Search crypto, gold, movies, songs…"
                    autocomplete="off" autocorrect="off" spellcheck="false">
             <button class="search-clear" id="searchClear" aria-label="Clear">✕</button>
         </div>
@@ -104,28 +104,15 @@
             </div>
         </section>
 
-        <section class="card" id="card-cricket">
+        <section class="card" id="card-converter">
             <div class="card-header">
                 <div class="card-title-group">
-                    <span class="card-icon">🏏</span>
-                    <h2>Cricket Scores</h2>
+                    <span class="card-icon">💱</span>
+                    <h2>USD ⇄ PKR Converter</h2>
                 </div>
-                <button class="btn-icon" data-refresh="cricket" title="Refresh">↻</button>
+                <button class="btn-icon" data-refresh="converter" title="Refresh rate">↻</button>
             </div>
-            <div class="card-content" id="cricket-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
-        </section>
-
-        <section class="card" id="card-football">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">⚽</span>
-                    <h2>FIFA World Cup 2026</h2>
-                </div>
-                <button class="btn-icon" data-refresh="football" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="football-content">
+            <div class="card-content" id="converter-content">
                 <div class="loading-state"><div class="spinner"></div></div>
             </div>
         </section>
@@ -173,6 +160,6 @@
 
     <div class="toast-stack" id="toastStack"></div>
 
-    <script src="/js/app.js"></script>
+    <script src="/js/app.js?v=9"></script>
 </body>
 </html>
