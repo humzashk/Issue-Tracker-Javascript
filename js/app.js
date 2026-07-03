@@ -309,6 +309,7 @@ function renderRanked(id, data) {
         <div class="ranked-title">${esc(item.title)}</div>
         ${item.subtitle ? `<div class="ranked-sub">${esc(item.subtitle)}</div>` : ''}
       </div>
+      ${safeUrl(item.preview) ? `<button class="play-btn" data-preview="${safeUrl(item.preview)}" aria-label="Play 30s preview">▶</button>` : ''}
     </div>
   `).join('');
 
@@ -342,6 +343,77 @@ function renderConverter(data) {
     pkr.value = a;
     usd.dispatchEvent(new Event('input'));
   });
+}
+
+// ── Audio previews (30s) ─────────────────────────────────────────────────────
+
+let audioEl = null;
+let playingBtn = null;
+
+function stopPreview() {
+  if (audioEl) audioEl.pause();
+  if (playingBtn) { playingBtn.textContent = '▶'; playingBtn.classList.remove('playing'); }
+  playingBtn = null;
+}
+
+function togglePreview(btn) {
+  if (playingBtn === btn) { stopPreview(); return; }
+  stopPreview();
+  if (!audioEl) {
+    audioEl = new Audio();
+    audioEl.volume = 0.85;
+    audioEl.addEventListener('ended', stopPreview);
+  }
+  audioEl.src = btn.dataset.preview;
+  audioEl.play().catch(() => {});
+  btn.textContent = '⏸';
+  btn.classList.add('playing');
+  playingBtn = btn;
+}
+
+// ── Currencies & plastics renderers ──────────────────────────────────────────
+
+function renderCurrencies(data) {
+  const list = data?.currencies;
+  if (!list?.length) { showError('currencies-content', 'No rates available'); return; }
+
+  const rows = list.map(c => `
+    <div class="commodity-item">
+      <div class="commodity-name-group">
+        <span class="commodity-icon">${c.flag || '💱'}</span>
+        <div>
+          <div class="commodity-label">${esc(c.code)}</div>
+          <div class="commodity-sub">${esc(c.name)}</div>
+        </div>
+      </div>
+      <div class="commodity-price-group">
+        <div class="commodity-price">${fmtPKR(c.pkr)}</div>
+        <div class="commodity-unit">per ${esc(c.code)}</div>
+      </div>
+    </div>
+  `).join('');
+
+  setHTML('currencies-content', `<div class="commodity-list">${rows}</div>`);
+}
+
+function renderPlastics(data) {
+  if (!data?.items?.length) { showError('plastics-content', 'No rates available'); return; }
+
+  const tiles = data.items.map(i => `
+    <div class="plastic-item">
+      <div class="plastic-grade">${esc(i.grade)}</div>
+      <div class="plastic-rate">${fmtPKR(i.rate)}</div>
+      <div class="plastic-unit">${esc(i.unit || 'PKR/kg')}</div>
+    </div>
+  `).join('');
+
+  setHTML('plastics-content', `
+    <div class="plastic-grid">${tiles}</div>
+    <div class="plastic-meta">
+      ${data.indicative ? '<span class="badge-indicative">⚠ Indicative</span>' : '<span class="badge-live">● Live</span>'}
+      Updated ${esc(data.updated || '—')} · ${esc(data.source || '')}
+    </div>
+  `);
 }
 
 // ── Ticker tape ───────────────────────────────────────────────────────────────
@@ -730,6 +802,7 @@ const ZEN_QUOTES = [
 let zenPhaseTimer = null;
 
 function enterZen() {
+  stopPreview();
   const overlay = el('zenOverlay');
   overlay.hidden = false;
   el('zenQuote').textContent = ZEN_QUOTES[(Math.random() * ZEN_QUOTES.length) | 0];
@@ -845,6 +918,16 @@ const MODULES = [
     name: 'reels',
     endpoint: '/api/reels',
     render: data => { renderRanked('reels-content', data); indexRanked('reels', data); },
+  },
+  {
+    name: 'currencies',
+    endpoint: '/api/forex',
+    render: data => renderCurrencies(data),
+  },
+  {
+    name: 'plastics',
+    endpoint: '/api/plastics',
+    render: data => renderPlastics(data),
   },
 ];
 
@@ -1053,6 +1136,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.addEventListener('click', e => {
+    const play = e.target.closest('.play-btn');
+    if (play) { togglePreview(play); return; }
     const btn = e.target.closest('[data-refresh]');
     if (!btn) return;
     const mod = MODULES.find(m => m.name === btn.dataset.refresh);

@@ -37,6 +37,7 @@ module.exports = async function handler(req, res) {
       title: t.title ?? '',
       subtitle: t.artist?.name ?? '',
       image: t.album?.cover_medium ?? t.album?.cover ?? null,
+      preview: t.preview ?? null,
     }));
 
     res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');

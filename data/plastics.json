@@ -1,0 +1,16 @@
+{
+  "updated": "2026-07-03",
+  "note": "Indicative Karachi market rates. Edit this file (data/plastics.json) to update — the site reads it live. Rates in PKR per kg.",
+  "items": [
+    { "grade": "PP Injection (Crystal)", "rate": 395, "unit": "PKR/kg" },
+    { "grade": "PP Film Grade",          "rate": 405, "unit": "PKR/kg" },
+    { "grade": "PP Tape / Raffia",       "rate": 388, "unit": "PKR/kg" },
+    { "grade": "HDPE Injection",         "rate": 370, "unit": "PKR/kg" },
+    { "grade": "HDPE Blow Moulding",     "rate": 375, "unit": "PKR/kg" },
+    { "grade": "HDPE Film",              "rate": 382, "unit": "PKR/kg" },
+    { "grade": "LLDPE Film",             "rate": 392, "unit": "PKR/kg" },
+    { "grade": "LDPE Film",              "rate": 410, "unit": "PKR/kg" },
+    { "grade": "PET Bottle Grade",       "rate": 340, "unit": "PKR/kg" },
+    { "grade": "PVC Suspension",         "rate": 330, "unit": "PKR/kg" }
+  ]
+}

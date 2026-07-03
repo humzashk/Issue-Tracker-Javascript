@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LiveRates Dashboard</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
-    <link rel="stylesheet" href="/css/styles.css?v=12">
+    <link rel="stylesheet" href="/css/styles.css?v=13">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
@@ -117,6 +117,32 @@
             </div>
         </section>
 
+        <section class="card" id="card-currencies">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <span class="card-icon">💵</span>
+                    <h2>Currency Rates (PKR)</h2>
+                </div>
+                <button class="btn-icon" data-refresh="currencies" title="Refresh">↻</button>
+            </div>
+            <div class="card-content" id="currencies-content">
+                <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+        </section>
+
+        <section class="card span-2" id="card-plastics">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <span class="card-icon">🧪</span>
+                    <h2>Plastic Raw Material Rates (PKR/kg)</h2>
+                </div>
+                <button class="btn-icon" data-refresh="plastics" title="Refresh">↻</button>
+            </div>
+            <div class="card-content" id="plastics-content">
+                <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+        </section>
+
         <section class="card" id="card-movies">
             <div class="card-header">
                 <div class="card-title-group">
@@ -186,6 +212,6 @@
 
     <div class="toast-stack" id="toastStack"></div>
 
-    <script src="/js/app.js?v=12"></script>
+    <script src="/js/app.js?v=13"></script>
 </body>
 </html>

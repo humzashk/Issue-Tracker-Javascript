@@ -1018,6 +1018,75 @@ body {
 .toast-title { font-size: 0.8rem; font-weight: 800; }
 .toast-sub { font-size: 0.7rem; color: var(--text-2); }
 
+/* ── Plastics grid ───────────────────────────────────────────────────────── */
+.plastic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.625rem;
+}
+
+.plastic-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.6rem;
+  text-align: center;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.plastic-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: translateY(-2px);
+}
+
+.plastic-grade { font-size: 0.7rem; font-weight: 700; color: var(--text-2); min-height: 2em; display: flex; align-items: center; justify-content: center; }
+.plastic-rate { font-size: 1.05rem; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--accent); }
+.plastic-unit { font-size: 0.6rem; color: var(--text-3); margin-top: 2px; }
+
+.plastic-meta { margin-top: 12px; text-align: center; font-size: 0.66rem; color: var(--text-3); }
+
+.badge-indicative {
+  color: var(--yellow);
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.badge-live {
+  color: var(--green);
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+/* ── Audio play button ───────────────────────────────────────────────────── */
+.play-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 0.72rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.play-btn:hover { border-color: var(--accent); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent); }
+.play-btn.playing {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  animation: pulse-play 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-play {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 7px transparent; }
+}
+
 /* ── Utility ─────────────────────────────────────────────────────────────── */
 .positive { color: var(--green); }
 .negative { color: var(--red); }
