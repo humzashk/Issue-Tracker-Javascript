@@ -1,35 +1,13 @@
 // Pakistani daily commodities — fuel, energy, meat, grocery, produce.
 //
-// Layer 1: best-effort scrape of PSO's official fuel price page to pull
-//          live petrol/diesel (updated fortnightly by OGRA).
-// Layer 2: data/pak-commodities.json — the editable reference source that
-//          also carries per-item price history for graphs and forecasts.
+// Fuel layer: live multi-source scrape (OGRA, pakfuel.today, petrolrate.pk,
+//             hamariweb, PSO) — first sane result wins; see /api/probe for
+//             which sources are reachable from this deployment.
+// Base layer: data/pak-commodities.json — editable reference source that
+//             also carries per-item price history for graphs and forecasts.
 const fs = require('fs');
 const path = require('path');
-
-async function scrapePsoFuel() {
-  const res = await fetch('https://psopk.com/en/fuels/fuel-prices', {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-      Accept: 'text/html',
-    },
-  });
-  if (!res.ok) throw new Error(`PSO: ${res.status}`);
-  const html = await res.text();
-
-  const grab = re => {
-    const m = html.match(re);
-    if (!m) return null;
-    const v = parseFloat(m[1].replace(/,/g, ''));
-    return Number.isFinite(v) && v > 100 && v < 1000 ? v : null;
-  };
-
-  return {
-    petrol: grab(/premier|petrol|pmg[^]{0,200}?([\d,]+\.?\d*)/i),
-    diesel: grab(/diesel|hsd[^]{0,200}?([\d,]+\.?\d*)/i),
-  };
-}
+const { getLiveFuel } = require('./_fuel-sources.js');
 
 module.exports = async function handler(req, res) {
   let json;
@@ -44,16 +22,31 @@ module.exports = async function handler(req, res) {
   }
 
   let liveFuel = false;
+  let fuelSource = null;
   try {
-    const fuel = await scrapePsoFuel();
+    const fuel = await getLiveFuel();
+    const today = new Date().toISOString().slice(0, 10);
     const energy = json.sections.find(s => /fuel/i.test(s.title));
     if (energy) {
       for (const item of energy.items) {
-        if (fuel.petrol && /petrol/i.test(item.name)) { item.rate = fuel.petrol; liveFuel = true; }
-        if (fuel.diesel && /diesel/i.test(item.name)) { item.rate = fuel.diesel; liveFuel = true; }
+        const live =
+          /petrol/i.test(item.name) ? fuel.petrol :
+          /diesel/i.test(item.name) ? fuel.diesel : null;
+        if (live) {
+          item.rate = live;
+          liveFuel = true;
+          fuelSource = fuel.source;
+          // extend history with today's live point so charts stay current
+          const hist = item.history ?? (item.history = []);
+          const last = hist[hist.length - 1];
+          if (!last || last[0] !== today) hist.push([today, live]);
+          else last[1] = live;
+        }
       }
     }
-  } catch {}
+  } catch (e) {
+    console.error('fuel scrape failed:', e.message);
+  }
 
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
   res.json({
@@ -63,8 +56,8 @@ module.exports = async function handler(req, res) {
       liveFuel,
       sections: json.sections,
       source: liveFuel
-        ? 'PSO (live fuel) + reference rates (data/pak-commodities.json)'
-        : 'Reference rates — updated via data/pak-commodities.json',
+        ? `Live fuel: ${fuelSource} · other items: reference (${json.updated})`
+        : `Reference rates (${json.updated}) — live fuel sources unreachable, see /api/probe`,
     },
     source: 'pak-commodities',
   });
