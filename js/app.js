@@ -405,8 +405,9 @@ function renderPlastics(data) {
       ${(sec.items ?? []).map(i => `
         <div class="plastic-item">
           <div class="plastic-grade">${esc(i.grade)}</div>
-          <div class="plastic-rate">${fmtPKR(i.rate)}</div>
-          <div class="plastic-unit">${esc(i.unit || 'PKR/kg')}</div>
+          <div class="plastic-rate">${i.rate != null ? fmtPKR(i.rate) : '—'}</div>
+          <div class="plastic-unit">${esc(i.unit || 'PKR/lb')}</div>
+          <div class="plastic-bag">${i.bag != null ? 'Bag: Rs ' + i.bag.toLocaleString('en-US') : 'N/A'}</div>
         </div>
       `).join('')}
     </div>
@@ -420,6 +421,133 @@ function renderPlastics(data) {
     </div>
   `);
 }
+
+// ── Pakistan daily commodities (with graphs + forecast) ─────────────────────
+
+let pakcomData = null;
+
+const SECTION_ICONS = {
+  'Fuel & Energy': '⛽', 'Meat & Poultry': '🍗',
+  'Grocery Staples': '🌾', 'Vegetables & Fruits': '🥬',
+};
+
+function linearForecast(history, daysAhead) {
+  // simple least-squares fit over (dayIndex, rate)
+  if (!history || history.length < 3) return null;
+  const pts = history.map(h => [new Date(h[0]).getTime() / 86400000, h[1]]);
+  const n = pts.length;
+  const sx = pts.reduce((a, p) => a + p[0], 0);
+  const sy = pts.reduce((a, p) => a + p[1], 0);
+  const sxy = pts.reduce((a, p) => a + p[0] * p[1], 0);
+  const sxx = pts.reduce((a, p) => a + p[0] * p[0], 0);
+  const denom = n * sxx - sx * sx;
+  if (!denom) return null;
+  const slope = (n * sxy - sx * sy) / denom;
+  const intercept = (sy - slope * sx) / n;
+  const lastX = pts[n - 1][0];
+  const value = slope * (lastX + daysAhead) + intercept;
+  return { value: Math.max(0, value), slopePerDay: slope };
+}
+
+function renderPakCom(data) {
+  if (!data?.sections?.length) { showError('pakcom-content', 'No rates available'); return; }
+  pakcomData = data;
+
+  const sections = data.sections.map((sec, si) => `
+    <div class="plastic-section-title">${SECTION_ICONS[sec.title] || '📦'} ${esc(sec.title)}</div>
+    <div class="pakcom-grid">
+      ${(sec.items ?? []).map((i, ii) => {
+        const hist = i.history ?? [];
+        const prev = hist.length > 1 ? hist[hist.length - 2][1] : null;
+        const delta = prev != null ? i.rate - prev : null;
+        const cls = delta > 0 ? 'negative' : delta < 0 ? 'positive' : 'neutral';
+        const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '—';
+        return `
+        <div class="pakcom-item" data-si="${si}" data-ii="${ii}" title="Tap for graph & forecast">
+          <div class="pakcom-name">${esc(i.name)}</div>
+          <div class="pakcom-rate">${fmtPKR(i.rate)}</div>
+          <div class="pakcom-foot">
+            <span class="pakcom-unit">${esc(i.unit || '')}</span>
+            ${delta != null ? `<span class="${cls}">${arrow} ${Math.abs(delta)}</span>` : ''}
+          </div>
+          <span class="pakcom-chart-hint">📈</span>
+        </div>`;
+      }).join('')}
+    </div>
+  `).join('');
+
+  setHTML('pakcom-content', `
+    ${sections}
+    <div class="plastic-meta">
+      ${data.liveFuel ? '<span class="badge-live">● Live fuel</span>' : '<span class="badge-indicative">◆ Reference</span>'}
+      Updated ${esc(data.updated || '—')} · ${esc(data.source || '')} · Tap any item for graph &amp; 30-day forecast
+    </div>
+  `);
+}
+
+function lineChartSVG(history, forecast) {
+  const W = 560, H = 220, PAD = 34;
+  const pts = history.map(h => ({ t: new Date(h[0]).getTime(), v: h[1] }));
+  const fT = forecast ? pts[pts.length - 1].t + 30 * 86400000 : null;
+  const allV = pts.map(p => p.v).concat(forecast ? [forecast.value] : []);
+  const allT = pts.map(p => p.t).concat(fT ? [fT] : []);
+  const minV = Math.min(...allV) * 0.97, maxV = Math.max(...allV) * 1.03;
+  const minT = Math.min(...allT), maxT = Math.max(...allT);
+  const x = t => PAD + ((t - minT) / (maxT - minT || 1)) * (W - PAD * 2);
+  const y = v => H - PAD - ((v - minV) / (maxV - minV || 1)) * (H - PAD * 2);
+
+  const line = pts.map(p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const last = pts[pts.length - 1];
+
+  const gridLines = [0, 0.5, 1].map(f => {
+    const v = minV + (maxV - minV) * f;
+    return `<line x1="${PAD}" y1="${y(v)}" x2="${W - PAD}" y2="${y(v)}" class="chart-grid"/>
+            <text x="${PAD - 6}" y="${y(v) + 4}" class="chart-axis" text-anchor="end">${Math.round(v)}</text>`;
+  }).join('');
+
+  const dateLabels = [pts[0], last].map(p =>
+    `<text x="${x(p.t)}" y="${H - 10}" class="chart-axis" text-anchor="middle">${new Date(p.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</text>`
+  ).join('');
+
+  const forecastLine = forecast
+    ? `<line x1="${x(last.t)}" y1="${y(last.v)}" x2="${x(fT)}" y2="${y(forecast.value)}" class="chart-forecast-line"/>
+       <circle cx="${x(fT)}" cy="${y(forecast.value)}" r="4" class="chart-forecast-dot"/>
+       <text x="${x(fT) - 6}" y="${y(forecast.value) - 10}" class="chart-axis" text-anchor="end">${Math.round(forecast.value)}</text>`
+    : '';
+
+  return `
+    <svg class="line-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+      ${gridLines}
+      ${dateLabels}
+      <polyline class="chart-line" points="${line}"/>
+      ${pts.map(p => `<circle cx="${x(p.t)}" cy="${y(p.v)}" r="3" class="chart-dot"/>`).join('')}
+      ${forecastLine}
+    </svg>`;
+}
+
+function openChart(si, ii) {
+  const item = pakcomData?.sections?.[si]?.items?.[ii];
+  if (!item?.history?.length) return;
+
+  const fc = linearForecast(item.history, 30);
+  el('chartTitle').textContent = item.name;
+  el('chartSub').textContent = `${item.unit} · current ${fmtPKR(item.rate)}`;
+  el('chartBody').innerHTML = lineChartSVG(item.history, fc);
+
+  if (fc) {
+    const diff = fc.value - item.rate;
+    const dir = diff > 1 ? `▲ likely to RISE to ~${fmtPKR(fc.value)}` : diff < -1 ? `▼ likely to EASE to ~${fmtPKR(fc.value)}` : `→ likely to stay near ${fmtPKR(item.rate)}`;
+    el('chartForecast').innerHTML =
+      `<strong>30-day forecast:</strong> ${dir}` +
+      `<span class="chart-caveat">Simple trend projection from recorded history — not financial advice.</span>`;
+  } else {
+    el('chartForecast').innerHTML = '<span class="chart-caveat">Not enough history for a forecast yet.</span>';
+  }
+
+  el('chartModal').hidden = false;
+}
+
+function closeChart() { el('chartModal').hidden = true; }
 
 // ── Ticker tape ───────────────────────────────────────────────────────────────
 
@@ -934,6 +1062,11 @@ const MODULES = [
     endpoint: '/api/plastics',
     render: data => renderPlastics(data),
   },
+  {
+    name: 'pakcom',
+    endpoint: '/api/pakcom',
+    render: data => renderPakCom(data),
+  },
 ];
 
 async function loadModule(mod) {
@@ -1137,12 +1270,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (k === 'r') loadAll();
     else if (k === 't') cycleTheme();
     else if (k === 'z') el('zenOverlay').hidden ? enterZen() : exitZen();
-    else if (k === 'escape' && !el('zenOverlay').hidden) exitZen();
+    else if (k === 'escape') {
+      if (!el('chartModal').hidden) closeChart();
+      else if (!el('zenOverlay').hidden) exitZen();
+    }
   });
+
+  el('chartClose')?.addEventListener('click', closeChart);
+  el('chartBackdrop')?.addEventListener('click', closeChart);
 
   document.addEventListener('click', e => {
     const play = e.target.closest('.play-btn');
     if (play) { togglePreview(play); return; }
+    const pk = e.target.closest('.pakcom-item');
+    if (pk) { openChart(+pk.dataset.si, +pk.dataset.ii); return; }
     const btn = e.target.closest('[data-refresh]');
     if (!btn) return;
     const mod = MODULES.find(m => m.name === btn.dataset.refresh);

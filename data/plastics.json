@@ -1,32 +1,56 @@
 {
-  "updated": "2026-07-03",
-  "note": "Authoritative source: edit this file on GitHub (data/plastics.json) and the site updates automatically within ~1 minute. LLDPE anchored to market reference Rs 219/kg on 03-07-2026. Adjust each grade's premium/discount as per market.",
+  "updated": "2026-07-02",
+  "source": "Ahmed Enterprises rate list (02/July/26)",
+  "note": "Rates are PKR per POUND (for 50-bag DO) with per-bag price alongside, exactly as published on the Ahmed Enterprises daily list. Edit this file on GitHub to update — the site redeploys automatically.",
   "sections": [
     {
-      "title": "LLDPE Film Grades",
+      "title": "PP — Injection, Film & Tape",
       "items": [
-        { "grade": "LLDPE 119",    "rate": 219, "unit": "PKR/kg" },
-        { "grade": "LLDPE 118",    "rate": 219, "unit": "PKR/kg" },
-        { "grade": "LLDPE 122",    "rate": 219, "unit": "PKR/kg" },
-        { "grade": "LLDPE 153",    "rate": 219, "unit": "PKR/kg" },
-        { "grade": "LLDPE 1018",   "rate": 219, "unit": "PKR/kg" },
-        { "grade": "LLDPE 7080",   "rate": 219, "unit": "PKR/kg" },
-        { "grade": "LLDPE 7087",   "rate": 219, "unit": "PKR/kg" },
-        { "grade": "LLDPE 1001BU", "rate": 219, "unit": "PKR/kg" }
+        { "grade": "PP 125",             "rate": 207,  "unit": "PKR/lb", "bag": 11500 },
+        { "grade": "PP 168",             "rate": 202,  "unit": "PKR/lb", "bag": 11250 },
+        { "grade": "PP 5705/5703",       "rate": 202,  "unit": "PKR/lb", "bag": 11250 },
+        { "grade": "PP Oman 2106/2100",  "rate": 202,  "unit": "PKR/lb", "bag": 11250 },
+        { "grade": "Crystal 525",        "rate": null, "unit": "PKR/lb", "bag": 12300 },
+        { "grade": "Crystal 500",        "rate": null, "unit": "PKR/lb", "bag": 12300 },
+        { "grade": "HI 850/851",         "rate": null, "unit": "PKR/lb", "bag": 13300 },
+        { "grade": "PP Film 631",        "rate": null, "unit": "PKR/lb", "bag": null },
+        { "grade": "PP Film Oman 4128",  "rate": 370,  "unit": "PKR/lb", "bag": 20450 },
+        { "grade": "PP Tape",            "rate": 201,  "unit": "PKR/lb", "bag": 11200 }
       ]
     },
     {
-      "title": "Other Materials",
+      "title": "PP Random & CoPP",
       "items": [
-        { "grade": "LDPE Film",            "rate": 232, "unit": "PKR/kg" },
-        { "grade": "HDPE Film",            "rate": 217, "unit": "PKR/kg" },
-        { "grade": "HDPE Blow Moulding",   "rate": 213, "unit": "PKR/kg" },
-        { "grade": "HDPE Injection",       "rate": 210, "unit": "PKR/kg" },
-        { "grade": "PP Injection (Crystal)", "rate": 205, "unit": "PKR/kg" },
-        { "grade": "PP Film Grade",        "rate": 212, "unit": "PKR/kg" },
-        { "grade": "PP Tape / Raffia",     "rate": 202, "unit": "PKR/kg" },
-        { "grade": "PET Bottle Grade",     "rate": 195, "unit": "PKR/kg" },
-        { "grade": "PVC Suspension",       "rate": 190, "unit": "PKR/kg" }
+        { "grade": "PP Random 568",           "rate": 265,  "unit": "PKR/lb", "bag": 14850 },
+        { "grade": "Random 425",              "rate": 300,  "unit": "PKR/lb", "bag": 16700 },
+        { "grade": "PP Random Recycle Natural", "rate": null, "unit": "PKR/lb", "bag": 12000 },
+        { "grade": "Random Blow 307",         "rate": 295,  "unit": "PKR/lb", "bag": 16300 },
+        { "grade": "Random Blow SM198",       "rate": 305,  "unit": "PKR/lb", "bag": 16900 },
+        { "grade": "CoPP 510",                "rate": 235,  "unit": "PKR/lb", "bag": 13200 },
+        { "grade": "CoPP C190",               "rate": 220,  "unit": "PKR/lb", "bag": 12300 }
+      ]
+    },
+    {
+      "title": "HDPE",
+      "items": [
+        { "grade": "HD Blow Qatar 5502", "rate": 255, "unit": "PKR/lb", "bag": 14200 },
+        { "grade": "HD Blow China 5502", "rate": 225, "unit": "PKR/lb", "bag": 12650 },
+        { "grade": "HD Inj 17450",       "rate": 255, "unit": "PKR/lb", "bag": 14300 },
+        { "grade": "HD Oman",            "rate": 245, "unit": "PKR/lb", "bag": 13600 }
+      ]
+    },
+    {
+      "title": "LLDPE",
+      "items": [
+        { "grade": "LLD 118",  "rate": 221, "unit": "PKR/lb", "bag": 12265 },
+        { "grade": "LLD 7080", "rate": 219, "unit": "PKR/lb", "bag": 12155 }
+      ]
+    },
+    {
+      "title": "Others",
+      "items": [
+        { "grade": "Calpet FL105",  "rate": 134,  "unit": "PKR/kg", "bag": 3350 },
+        { "grade": "ABS China 211", "rate": null, "unit": "PKR/lb", "bag": 15000 }
       ]
     }
   ]

@@ -1068,6 +1068,91 @@ body {
   margin-right: 6px;
 }
 
+.plastic-bag {
+  font-size: 0.66rem;
+  color: var(--text-2);
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Pakistan daily rates ────────────────────────────────────────────────── */
+.pakcom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 0.625rem;
+}
+
+.pakcom-item {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.65rem;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.pakcom-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: translateY(-2px);
+}
+
+.pakcom-name { font-size: 0.72rem; font-weight: 700; color: var(--text-2); }
+.pakcom-rate { font-size: 1rem; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.pakcom-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; font-size: 0.62rem; }
+.pakcom-unit { color: var(--text-3); }
+.pakcom-chart-hint { position: absolute; top: 8px; right: 9px; font-size: 0.7rem; opacity: 0.45; }
+.pakcom-item:hover .pakcom-chart-hint { opacity: 1; }
+
+/* ── Chart modal ─────────────────────────────────────────────────────────── */
+.chart-modal[hidden] { display: none; }
+
+.chart-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.chart-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+}
+
+.chart-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem 1.25rem;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  animation: toast-in 0.3s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+}
+
+.chart-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.chart-title { font-size: 1rem; font-weight: 800; }
+.chart-sub { font-size: 0.72rem; color: var(--text-3); margin-top: 2px; }
+
+.line-chart { width: 100%; height: auto; display: block; }
+.chart-grid { stroke: var(--border); stroke-width: 1; }
+.chart-axis { fill: var(--text-3); font-size: 10px; }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { fill: var(--accent); }
+.chart-forecast-line { stroke: var(--yellow); stroke-width: 2; stroke-dasharray: 6 5; }
+.chart-forecast-dot { fill: var(--yellow); }
+
+.chart-forecast { margin-top: 10px; font-size: 0.78rem; color: var(--text-2); }
+.chart-caveat { display: block; margin-top: 4px; font-size: 0.64rem; color: var(--text-3); }
+
 /* ── Audio play button ───────────────────────────────────────────────────── */
 .play-btn {
   flex-shrink: 0;

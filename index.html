@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LiveRates Dashboard</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
-    <link rel="stylesheet" href="/css/styles.css?v=14">
+    <link rel="stylesheet" href="/css/styles.css?v=15">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
@@ -134,11 +134,24 @@
             <div class="card-header">
                 <div class="card-title-group">
                     <span class="card-icon">🧪</span>
-                    <h2>Plastic Raw Material Rates (PKR/kg)</h2>
+                    <h2>Plastic Raw Material Rates</h2>
                 </div>
                 <button class="btn-icon" data-refresh="plastics" title="Refresh">↻</button>
             </div>
             <div class="card-content" id="plastics-content">
+                <div class="loading-state"><div class="spinner"></div></div>
+            </div>
+        </section>
+
+        <section class="card span-2" id="card-pakcom">
+            <div class="card-header">
+                <div class="card-title-group">
+                    <span class="card-icon">🛒</span>
+                    <h2>Pakistan Daily Rates</h2>
+                </div>
+                <button class="btn-icon" data-refresh="pakcom" title="Refresh">↻</button>
+            </div>
+            <div class="card-content" id="pakcom-content">
                 <div class="loading-state"><div class="spinner"></div></div>
             </div>
         </section>
@@ -212,6 +225,21 @@
 
     <div class="toast-stack" id="toastStack"></div>
 
-    <script src="/js/app.js?v=14"></script>
+    <div class="chart-modal" id="chartModal" hidden>
+        <div class="chart-backdrop" id="chartBackdrop"></div>
+        <div class="chart-dialog">
+            <div class="chart-head">
+                <div>
+                    <div class="chart-title" id="chartTitle"></div>
+                    <div class="chart-sub" id="chartSub"></div>
+                </div>
+                <button class="btn-icon" id="chartClose" aria-label="Close">✕</button>
+            </div>
+            <div id="chartBody"></div>
+            <div class="chart-forecast" id="chartForecast"></div>
+        </div>
+    </div>
+
+    <script src="/js/app.js?v=15"></script>
 </body>
 </html>

@@ -81,7 +81,7 @@ module.exports = async function handler(req, res) {
         updated: json.updated,
         indicative: true,
         sections: json.sections,
-        source: 'Market reference rates — updated via data/plastics.json',
+        source: json.source || 'Market reference rates — updated via data/plastics.json',
       };
     } catch (err) {
       console.error(err);
