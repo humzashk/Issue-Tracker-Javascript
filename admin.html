@@ -16,19 +16,28 @@
         h1 { font-size: 1.15rem; margin-bottom: 4px; }
         .sub { font-size: 0.75rem; color: #9090b8; margin-bottom: 1.5rem; line-height: 1.6; }
         label { display: block; font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9090b8; margin: 14px 0 6px; }
-        input, textarea, select {
+        input, textarea {
             width: 100%; background: #14142a; color: #e2e2f0;
             border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
             padding: 12px 14px; font-size: 0.9rem; font-family: inherit; outline: none;
         }
         input:focus, textarea:focus { border-color: #7c5cfc; }
-        textarea { min-height: 260px; font-family: ui-monospace, Menlo, monospace; font-size: 0.82rem; line-height: 1.7; }
+        textarea { min-height: 180px; font-family: ui-monospace, Menlo, monospace; font-size: 0.82rem; line-height: 1.7; }
+        .drop {
+            border: 2px dashed rgba(124,92,252,0.4); border-radius: 12px;
+            padding: 26px 14px; text-align: center; cursor: pointer;
+            transition: border-color .2s, background .2s; font-size: 0.85rem; color: #9090b8;
+        }
+        .drop:hover, .drop.armed { border-color: #7c5cfc; background: rgba(124,92,252,0.06); }
+        .drop strong { color: #e2e2f0; }
+        #preview { max-width: 100%; border-radius: 10px; margin-top: 10px; display: none; }
+        .or { text-align: center; color: #5a5a7a; font-size: 0.7rem; margin: 18px 0 4px; letter-spacing: 2px; }
         button {
             margin-top: 16px; width: 100%; background: #7c5cfc; color: #fff; border: none;
             padding: 14px; border-radius: 10px; font-size: 0.95rem; font-weight: 700; cursor: pointer;
         }
         button:disabled { opacity: 0.5; }
-        .result { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 0.82rem; display: none; }
+        .result { margin-top: 14px; padding: 12px 14px; border-radius: 10px; font-size: 0.82rem; display: none; line-height: 1.6; }
         .result.ok { display: block; background: rgba(34,211,164,0.12); color: #22d3a4; }
         .result.err { display: block; background: rgba(244,63,94,0.12); color: #f43f5e; }
         .hint { font-size: 0.68rem; color: #5a5a7a; margin-top: 8px; line-height: 1.7; }
@@ -37,27 +46,34 @@
 </head>
 <body>
     <div class="panel">
-        <h1>🧪 Rate Updater</h1>
-        <p class="sub">Paste today's rates from the Ahmed Enterprises list — one item per line:
-        <code>grade | rate/lb | bag price</code>. Existing grades update in place; the site
-        redeploys automatically in about a minute.</p>
+        <h1>🧪 Plastic Rate Updater</h1>
+        <p class="sub">Upload today's rate-list photo — the server reads every grade and price
+        off it automatically (OCR) and publishes. The site redeploys in about a minute.</p>
 
         <label>Admin key</label>
         <input type="password" id="key" placeholder="Your ADMIN_KEY" autocomplete="current-password">
 
+        <label>Rate list photo</label>
+        <div class="drop" id="drop">
+            📸 <strong>Tap to upload / take photo</strong><br>
+            of today's Ahmed Enterprises rate list
+            <input type="file" id="file" accept="image/*" hidden>
+        </div>
+        <img id="preview" alt="">
+
+        <div class="or">— OR TYPE MANUALLY —</div>
+
         <label>Rates (one per line)</label>
         <textarea id="lines" placeholder="PP 125 | 207 | 11500
-PP 168 | 202 | 11250
 LLD 118 | 221 | 12265
-LLD 7080 | 219 | 12155
 Crystal 525 | - | 12300"></textarea>
-        <p class="hint">Separators can be <code>|</code>, commas, or 2+ spaces. Use <code>-</code> where a value
-        isn't available. New grade names are added automatically under "Others".</p>
+        <p class="hint">Format: <code>grade | rate per lb | bag price</code>. Use <code>-</code> where a value
+        isn't available. If a photo is selected, it takes priority over typed lines.</p>
 
         <button id="submit">Publish rates</button>
         <div class="result" id="result"></div>
     </div>
 
-    <script src="/js/admin.js"></script>
+    <script src="/js/admin.js?v=2"></script>
 </body>
 </html>
