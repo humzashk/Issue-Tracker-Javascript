@@ -1,16 +1,33 @@
 {
   "updated": "2026-07-03",
-  "note": "Indicative Karachi market rates. Edit this file (data/plastics.json) to update — the site reads it live. Rates in PKR per kg.",
-  "items": [
-    { "grade": "PP Injection (Crystal)", "rate": 395, "unit": "PKR/kg" },
-    { "grade": "PP Film Grade",          "rate": 405, "unit": "PKR/kg" },
-    { "grade": "PP Tape / Raffia",       "rate": 388, "unit": "PKR/kg" },
-    { "grade": "HDPE Injection",         "rate": 370, "unit": "PKR/kg" },
-    { "grade": "HDPE Blow Moulding",     "rate": 375, "unit": "PKR/kg" },
-    { "grade": "HDPE Film",              "rate": 382, "unit": "PKR/kg" },
-    { "grade": "LLDPE Film",             "rate": 392, "unit": "PKR/kg" },
-    { "grade": "LDPE Film",              "rate": 410, "unit": "PKR/kg" },
-    { "grade": "PET Bottle Grade",       "rate": 340, "unit": "PKR/kg" },
-    { "grade": "PVC Suspension",         "rate": 330, "unit": "PKR/kg" }
+  "note": "Authoritative source: edit this file on GitHub (data/plastics.json) and the site updates automatically within ~1 minute. LLDPE anchored to market reference Rs 219/kg on 03-07-2026. Adjust each grade's premium/discount as per market.",
+  "sections": [
+    {
+      "title": "LLDPE Film Grades",
+      "items": [
+        { "grade": "LLDPE 119",    "rate": 219, "unit": "PKR/kg" },
+        { "grade": "LLDPE 118",    "rate": 219, "unit": "PKR/kg" },
+        { "grade": "LLDPE 122",    "rate": 219, "unit": "PKR/kg" },
+        { "grade": "LLDPE 153",    "rate": 219, "unit": "PKR/kg" },
+        { "grade": "LLDPE 1018",   "rate": 219, "unit": "PKR/kg" },
+        { "grade": "LLDPE 7080",   "rate": 219, "unit": "PKR/kg" },
+        { "grade": "LLDPE 7087",   "rate": 219, "unit": "PKR/kg" },
+        { "grade": "LLDPE 1001BU", "rate": 219, "unit": "PKR/kg" }
+      ]
+    },
+    {
+      "title": "Other Materials",
+      "items": [
+        { "grade": "LDPE Film",            "rate": 232, "unit": "PKR/kg" },
+        { "grade": "HDPE Film",            "rate": 217, "unit": "PKR/kg" },
+        { "grade": "HDPE Blow Moulding",   "rate": 213, "unit": "PKR/kg" },
+        { "grade": "HDPE Injection",       "rate": 210, "unit": "PKR/kg" },
+        { "grade": "PP Injection (Crystal)", "rate": 205, "unit": "PKR/kg" },
+        { "grade": "PP Film Grade",        "rate": 212, "unit": "PKR/kg" },
+        { "grade": "PP Tape / Raffia",     "rate": 202, "unit": "PKR/kg" },
+        { "grade": "PET Bottle Grade",     "rate": 195, "unit": "PKR/kg" },
+        { "grade": "PVC Suspension",       "rate": 190, "unit": "PKR/kg" }
+      ]
+    }
   ]
 }

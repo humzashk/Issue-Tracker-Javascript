@@ -397,20 +397,25 @@ function renderCurrencies(data) {
 }
 
 function renderPlastics(data) {
-  if (!data?.items?.length) { showError('plastics-content', 'No rates available'); return; }
+  if (!data?.sections?.length) { showError('plastics-content', 'No rates available'); return; }
 
-  const tiles = data.items.map(i => `
-    <div class="plastic-item">
-      <div class="plastic-grade">${esc(i.grade)}</div>
-      <div class="plastic-rate">${fmtPKR(i.rate)}</div>
-      <div class="plastic-unit">${esc(i.unit || 'PKR/kg')}</div>
+  const sections = data.sections.map(sec => `
+    <div class="plastic-section-title">${esc(sec.title)}</div>
+    <div class="plastic-grid">
+      ${(sec.items ?? []).map(i => `
+        <div class="plastic-item">
+          <div class="plastic-grade">${esc(i.grade)}</div>
+          <div class="plastic-rate">${fmtPKR(i.rate)}</div>
+          <div class="plastic-unit">${esc(i.unit || 'PKR/kg')}</div>
+        </div>
+      `).join('')}
     </div>
   `).join('');
 
   setHTML('plastics-content', `
-    <div class="plastic-grid">${tiles}</div>
+    ${sections}
     <div class="plastic-meta">
-      ${data.indicative ? '<span class="badge-indicative">⚠ Indicative</span>' : '<span class="badge-live">● Live</span>'}
+      ${data.indicative ? '<span class="badge-indicative">◆ Market reference</span>' : '<span class="badge-live">● Live</span>'}
       Updated ${esc(data.updated || '—')} · ${esc(data.source || '')}
     </div>
   `);

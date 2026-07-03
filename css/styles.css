@@ -1019,6 +1019,17 @@ body {
 .toast-sub { font-size: 0.7rem; color: var(--text-2); }
 
 /* ── Plastics grid ───────────────────────────────────────────────────────── */
+.plastic-section-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 14px 0 8px;
+}
+
+.plastic-section-title:first-child { margin-top: 0; }
+
 .plastic-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
