@@ -399,25 +399,51 @@ function renderCurrencies(data) {
 function renderPlastics(data) {
   if (!data?.sections?.length) { showError('plastics-content', 'No rates available'); return; }
 
+  const usdPkr = data.fx?.usdPkr ?? null;
+  const fxPct = data.fx?.fxAdjustPct;
+
+  // live international reference tiles (SunSirs China spot, daily)
+  const intlBlock = data.intl?.length ? `
+    <div class="plastic-section-title">🌏 International Reference — Live</div>
+    <div class="plastic-grid">
+      ${data.intl.map(i => `
+        <div class="plastic-item plastic-intl">
+          <div class="plastic-grade">${esc(i.name)}</div>
+          <div class="plastic-rate">${fmtPKR(i.pkrLb)}<span class="plastic-rate-sub">/lb</span></div>
+          <div class="plastic-unit">${fmtPKR(i.pkrKg)}/kg · ${i.rmbTon.toLocaleString('en-US')} RMB/ton</div>
+          ${i.changePct != null ? `<div class="plastic-bag ${i.changePct >= 0 ? 'negative' : 'positive'}">${i.changePct >= 0 ? '▲' : '▼'} ${Math.abs(i.changePct).toFixed(2)}% today</div>` : ''}
+        </div>
+      `).join('')}
+    </div>` : '';
+
   const sections = data.sections.map(sec => `
     <div class="plastic-section-title">${esc(sec.title)}</div>
     <div class="plastic-grid">
-      ${(sec.items ?? []).map(i => `
+      ${(sec.items ?? []).map(i => {
+        const usdLine = i.rate != null && usdPkr ? `≈ $${(i.rate / usdPkr).toFixed(3)}/lb live` : '';
+        const fxLine = i.liveRate != null && Math.abs(i.liveRate - i.rate) >= 0.5
+          ? `FX-adj: ${fmtPKR(i.liveRate)}` : '';
+        return `
         <div class="plastic-item">
           <div class="plastic-grade">${esc(i.grade)}</div>
           <div class="plastic-rate">${i.rate != null ? fmtPKR(i.rate) : '—'}</div>
-          <div class="plastic-unit">${esc(i.unit || 'PKR/lb')}</div>
-          <div class="plastic-bag">${i.bag != null ? 'Bag: Rs ' + i.bag.toLocaleString('en-US') : 'N/A'}</div>
-        </div>
-      `).join('')}
+          <div class="plastic-unit">${esc(i.unit || 'PKR/lb')}${usdLine ? ' · ' + usdLine : ''}</div>
+          <div class="plastic-bag">${i.bag != null ? 'Bag: Rs ' + i.bag.toLocaleString('en-US') : 'N/A'}${fxLine ? ' · ' + fxLine : ''}</div>
+        </div>`;
+      }).join('')}
     </div>
   `).join('');
 
+  const fxNote = usdPkr
+    ? ` · USD/PKR now ${usdPkr.toFixed(2)}${fxPct != null ? ` (${fxPct >= 0 ? '+' : ''}${fxPct.toFixed(2)}% vs list day)` : ''}`
+    : '';
+
   setHTML('plastics-content', `
+    ${intlBlock}
     ${sections}
     <div class="plastic-meta">
-      ${data.indicative ? '<span class="badge-indicative">◆ Market reference</span>' : '<span class="badge-live">● Live</span>'}
-      Updated ${esc(data.updated || '—')} · ${esc(data.source || '')}
+      <span class="badge-indicative">◆ List rates</span>
+      Updated ${esc(data.updated || '—')} · ${esc(data.source || '')}${fxNote}
     </div>
   `);
 }

@@ -1,96 +1,123 @@
-// Pakistani plastic raw material (dana) rates — PKR per kg.
+// Pakistani plastic raw material (dana) rates — PKR per lb/bag.
 //
-// Research note: there is no free, publicly scrapeable source for Pakistani
-// grade-level dana rates. Zaraye's rate page is behind Cloudflare bot
-// protection, Polymerupdate is subscription-only, and Plastic4trade covers
-// India/INR. The authoritative source is therefore data/plastics.json in
-// this repo — edit it on GitHub (even from a phone) and Vercel redeploys
-// the new rates automatically within about a minute.
-//
-// A best-effort scrape of zaraye.co still runs first so that if they ever
-// open up their pages, live rates take over automatically.
+// Layers, most-live first:
+//  1. International reference: SunSirs China PP spot price (published daily,
+//     RMB/ton) converted to PKR live — the benchmark most imported dana
+//     tracks. Attempted on every request.
+//  2. FX runtime adjustment: local list rates move with USD/PKR against the
+//     baseline captured when the rates were published (importers reprice on
+//     the dollar intraday). Requires baselineUsdPkr, stamped automatically
+//     by each admin publish.
+//  3. Base list: data/plastics.json — updated daily from the Ahmed
+//     Enterprises photo via /admin.html (OCR).
 const fs = require('fs');
 const path = require('path');
 
-const GRADES = [
-  { key: /lldpe[\s-]*119/i,            grade: 'LLDPE 119' },
-  { key: /lldpe[\s-]*118/i,            grade: 'LLDPE 118' },
-  { key: /lldpe[\s-]*122/i,            grade: 'LLDPE 122' },
-  { key: /lldpe[\s-]*153/i,            grade: 'LLDPE 153' },
-  { key: /lldpe[\s-]*1018|ll[\s-]*1018/i, grade: 'LLDPE 1018' },
-  { key: /7080/i,                      grade: 'LLDPE 7080' },
-  { key: /7087/i,                      grade: 'LLDPE 7087' },
-  { key: /1001\s*bu/i,                 grade: 'LLDPE 1001BU' },
-  { key: /pp[\s-]*injection|crystal/i, grade: 'PP Injection (Crystal)' },
-  { key: /pp[\s-]*film/i,              grade: 'PP Film Grade' },
-  { key: /raffia|pp[\s-]*tape/i,       grade: 'PP Tape / Raffia' },
-  { key: /hdpe[\s-]*injection/i,       grade: 'HDPE Injection' },
-  { key: /hdpe[\s-]*blow/i,            grade: 'HDPE Blow Moulding' },
-  { key: /hdpe[\s-]*film/i,            grade: 'HDPE Film' },
-  { key: /ldpe/i,                      grade: 'LDPE Film' },
-  { key: /pet/i,                       grade: 'PET Bottle Grade' },
-  { key: /pvc/i,                       grade: 'PVC Suspension' },
-];
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-async function scrapeZaraye() {
-  const res = await fetch('https://www.zaraye.co/plastic-dana-rate-today', {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-      Accept: 'text/html',
-      'Accept-Language': 'en-US,en;q=0.9',
-    },
-  });
-  if (!res.ok) throw new Error(`zaraye: ${res.status}`);
-  const html = await res.text();
-
-  const items = [];
-  for (const g of GRADES) {
-    const re = new RegExp(g.key.source + String.raw`[^]{0,300}?(?:Rs\.?|PKR)\s*([\d,]{2,6})`, 'i');
-    const m = html.match(re);
-    if (m) {
-      const rate = parseInt(m[1].replace(/,/g, ''), 10);
-      if (Number.isFinite(rate) && rate > 50 && rate < 2000) {
-        items.push({ grade: g.grade, rate, unit: 'PKR/kg' });
-      }
-    }
+async function fetchWith(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs || 6000);
+  try {
+    return await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/json' },
+      signal: ctrl.signal,
+      redirect: 'follow',
+    });
+  } finally {
+    clearTimeout(timer);
   }
-  if (items.length < 4) throw new Error('too few scraped rates');
-  return items;
 }
 
-function readLocalRates() {
-  const raw = fs.readFileSync(path.join(process.cwd(), 'data', 'plastics.json'), 'utf-8');
-  return JSON.parse(raw);
+async function fetchFx() {
+  const res = await fetchWith('https://open.er-api.com/v6/latest/USD');
+  if (!res.ok) throw new Error(`fx: ${res.status}`);
+  const json = await res.json();
+  const pkr = json?.rates?.PKR;
+  const cny = json?.rates?.CNY;
+  if (!pkr || !cny) throw new Error('fx rates missing');
+  return { usdPkr: pkr, pkrPerCny: pkr / cny };
+}
+
+// SunSirs publishes a daily China PP spot benchmark (RMB/ton)
+const SUNSIRS_URLS = [
+  'https://www.sunsirs.com/uk/prodetail-718.html',
+  'https://www.sunsirs.com/m/page/commodity-price-detail/commodity-price-detail-718.html',
+];
+
+async function fetchSunSirsPP() {
+  for (const url of SUNSIRS_URLS) {
+    try {
+      const res = await fetchWith(url);
+      if (!res.ok) continue;
+      const html = await res.text();
+      // benchmark prices are 4-5 digit RMB/ton figures like 9,900.00 / 9900.00
+      const m = html.match(/(\d{1,2},?\d{3}\.\d{2})/);
+      if (!m) continue;
+      const rmbTon = parseFloat(m[1].replace(/,/g, ''));
+      if (!(rmbTon > 5000 && rmbTon < 20000)) continue;
+      const chg = html.match(/([+-]\d+\.\d+)\s*%/);
+      return { rmbTon, changePct: chg ? parseFloat(chg[1]) : null, url };
+    } catch {}
+  }
+  throw new Error('SunSirs unreachable');
 }
 
 module.exports = async function handler(req, res) {
-  let payload;
+  let json;
   try {
-    const items = await scrapeZaraye();
-    payload = {
-      updated: new Date().toISOString().slice(0, 10),
-      indicative: false,
-      sections: [{ title: 'Live Market Rates', items }],
-      source: 'zaraye.co (live)',
-    };
-  } catch {
-    try {
-      const json = readLocalRates();
-      payload = {
-        updated: json.updated,
-        indicative: true,
-        sections: json.sections,
-        source: json.source || 'Market reference rates — updated via data/plastics.json',
-      };
-    } catch (err) {
-      console.error(err);
-      return res
-        .status(500)
-        .json({ success: false, message: 'Plastic rates are temporarily unavailable' });
+    const raw = fs.readFileSync(path.join(process.cwd(), 'data', 'plastics.json'), 'utf-8');
+    json = JSON.parse(raw);
+  } catch (err) {
+    console.error(err);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Plastic rates are temporarily unavailable' });
+  }
+
+  const [fxR, ppR] = await Promise.allSettled([fetchFx(), fetchSunSirsPP()]);
+  const fx = fxR.status === 'fulfilled' ? fxR.value : null;
+  const pp = ppR.status === 'fulfilled' ? ppR.value : null;
+
+  // international live reference tiles
+  const intl = [];
+  if (pp && fx) {
+    const pkrKg = (pp.rmbTon / 1000) * fx.pkrPerCny;
+    intl.push({
+      name: 'PP — China spot (SunSirs, daily)',
+      pkrKg: Math.round(pkrKg),
+      pkrLb: Math.round(pkrKg / 2.20462),
+      rmbTon: pp.rmbTon,
+      changePct: pp.changePct,
+    });
+  }
+
+  // FX runtime adjustment of local list rates
+  const baseline = json.baselineUsdPkr ?? null;
+  let fxAdjustPct = null;
+  if (fx && baseline) {
+    fxAdjustPct = ((fx.usdPkr / baseline) - 1) * 100;
+    for (const sec of json.sections) {
+      for (const item of sec.items) {
+        if (item.rate != null) {
+          item.liveRate = Math.round(item.rate * (fx.usdPkr / baseline) * 10) / 10;
+        }
+      }
     }
   }
 
-  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
-  res.json({ success: true, data: payload, source: payload.source });
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+  res.json({
+    success: true,
+    data: {
+      updated: json.updated,
+      indicative: true,
+      sections: json.sections,
+      intl,
+      fx: fx ? { usdPkr: fx.usdPkr, baselineUsdPkr: baseline, fxAdjustPct } : null,
+      source: json.source || 'data/plastics.json',
+    },
+    source: json.source || 'plastics',
+  });
 };

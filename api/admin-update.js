@@ -211,6 +211,18 @@ module.exports = async function handler(req, res) {
 
     json.updated = today;
 
+    // stamp the USD/PKR baseline so runtime FX adjustment has an anchor
+    try {
+      const fxRes = await fetch('https://open.er-api.com/v6/latest/USD', {
+        headers: { Accept: 'application/json' },
+      });
+      const pkr = (await fxRes.json())?.rates?.PKR;
+      if (pkr) {
+        json.baselineUsdPkr = pkr;
+        json.baselineDate = today;
+      }
+    } catch {}
+
     await gh(`/repos/${OWNER}/${REPO}/contents/${filePath}`, {
       method: 'PUT',
       body: JSON.stringify({
