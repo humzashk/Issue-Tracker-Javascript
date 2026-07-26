@@ -6,16 +6,19 @@ A live data dashboard built for [Vercel](https://vercel.com) deployment. Display
 
 | Section | Data Source |
 |---|---|
-| Crypto Rates in PKR (BTC, ETH, XRP, USDT) with 7-day sparklines | CoinGecko |
+| Crypto Rates in PKR + USD (BTC, ETH, XRP, USDT) with 7-day sparklines | CoinGecko |
 | Gold & Silver per tola (PKR), Copper, Brent & WTI Oil | gold.pk / Yahoo Finance |
-| USD ⇄ PKR Currency Converter | open.er-api.com |
+| USD ⇄ PKR Converter + currency rates (EUR, GBP, SAR, AED, CNY, TRY) | open.er-api.com |
 | Crypto Fear & Greed gauge | alternative.me |
-| Top 10 Trending Movies (IMDb + Metascore via OMDb) | Apple iTunes RSS |
-| Top 10 Trending Songs | Apple iTunes RSS |
+| Pakistan Daily Rates (fuel, energy, meat, grocery, produce) with graphs & 30-day forecast | live fuel scrape + reference data |
+| Top 10 Trending Movies (IMDb + Metascore) | IMDb Most Popular / OMDb |
+| Global Top 10 Songs · Pakistan Trending · Reels Viral Audio (with 30s previews) | Spotify/YouTube daily charts, Apple, Deezer — all keyless |
 
 Plus: BTC prediction game with XP/levels/achievements, global search, ticker tape, zen mode, 4 themes, and a few hidden easter eggs. 🎮
 
-No API keys are required for the initial deployment — all data sources are free and publicly accessible.
+No API keys are required — every data source is free and publicly accessible. `OMDB_API_KEY` is optional and only adds IMDb/Metascore ratings to the movies card.
+
+Visit `/api/probe` on a deployment to see which upstream sources are reachable from it.
 
 ## Tech Stack
 

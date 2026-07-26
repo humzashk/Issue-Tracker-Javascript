@@ -85,6 +85,13 @@ const ACHIEVEMENTS = {
   moon:       { emoji: '🚀', title: 'To The Moon',   sub: 'You typed the magic word' },
   patriot:    { emoji: '🇵🇰', title: 'Pakistan Zindabad', sub: 'Searched for the homeland' },
   diamond:    { emoji: '💎', title: 'Diamond Hands', sub: 'Tapped BTC 5 times — never selling' },
+  chai:       { emoji: '☕', title: 'Chai Lover',     sub: 'Kaam se pehle chai — priorities sahi hain' },
+  biryani:    { emoji: '🍛', title: 'Biryani Ka Baap', sub: 'Aloo wali ya bina aloo? Jang chhir gayi' },
+  paisa:      { emoji: '💸', title: 'Paisa Paisa',   sub: 'Paisa hi paisa hoga — khwaab mein' },
+  impatient:  { emoji: '😮‍💨', title: 'Sabar Ka Phal',  sub: 'Refresh spam kiya — rate phir bhi wahi' },
+  sleepy:     { emoji: '😴', title: 'So Gaye?',      sub: 'Screen khuli chhor ke ghayab ho gaye' },
+  roasted:    { emoji: '🔥', title: 'Bezti Collector', sub: 'Banter pe click kar ke apni bezti mangi' },
+  boom:       { emoji: '💥', title: 'Boom Boom',     sub: 'Shahid Afridi vibes' },
 };
 
 function loadProfile() {
@@ -371,7 +378,7 @@ function togglePreview(btn) {
   playingBtn = btn;
 }
 
-// ── Currencies & plastics renderers ──────────────────────────────────────────
+// ── Currencies renderer ──────────────────────────────────────────
 
 function renderCurrencies(data) {
   const list = data?.currencies;
@@ -394,58 +401,6 @@ function renderCurrencies(data) {
   `).join('');
 
   setHTML('currencies-content', `<div class="commodity-list">${rows}</div>`);
-}
-
-function renderPlastics(data) {
-  if (!data?.sections?.length) { showError('plastics-content', 'No rates available'); return; }
-
-  const usdPkr = data.fx?.usdPkr ?? null;
-  const fxPct = data.fx?.fxAdjustPct;
-
-  // live international reference tiles (SunSirs China spot, daily)
-  const intlBlock = data.intl?.length ? `
-    <div class="plastic-section-title">🌏 International Reference — Live</div>
-    <div class="plastic-grid">
-      ${data.intl.map(i => `
-        <div class="plastic-item plastic-intl">
-          <div class="plastic-grade">${esc(i.name)}</div>
-          <div class="plastic-rate">${fmtPKR(i.pkrLb)}<span class="plastic-rate-sub">/lb</span></div>
-          <div class="plastic-unit">${fmtPKR(i.pkrKg)}/kg · ${i.rmbTon.toLocaleString('en-US')} RMB/ton</div>
-          ${i.changePct != null ? `<div class="plastic-bag ${i.changePct >= 0 ? 'negative' : 'positive'}">${i.changePct >= 0 ? '▲' : '▼'} ${Math.abs(i.changePct).toFixed(2)}% today</div>` : ''}
-        </div>
-      `).join('')}
-    </div>` : '';
-
-  const sections = data.sections.map(sec => `
-    <div class="plastic-section-title">${esc(sec.title)}</div>
-    <div class="plastic-grid">
-      ${(sec.items ?? []).map(i => {
-        const usdLine = i.rate != null && usdPkr ? `≈ $${(i.rate / usdPkr).toFixed(3)}/lb live` : '';
-        const fxLine = i.liveRate != null && Math.abs(i.liveRate - i.rate) >= 0.5
-          ? `FX-adj: ${fmtPKR(i.liveRate)}` : '';
-        return `
-        <div class="plastic-item">
-          <div class="plastic-grade">${esc(i.grade)}</div>
-          <div class="plastic-rate">${i.rate != null ? fmtPKR(i.rate) : '—'}</div>
-          <div class="plastic-unit">${esc(i.unit || 'PKR/lb')}${usdLine ? ' · ' + usdLine : ''}</div>
-          <div class="plastic-bag">${i.bag != null ? 'Bag: Rs ' + i.bag.toLocaleString('en-US') : 'N/A'}${fxLine ? ' · ' + fxLine : ''}</div>
-        </div>`;
-      }).join('')}
-    </div>
-  `).join('');
-
-  const fxNote = usdPkr
-    ? ` · USD/PKR now ${usdPkr.toFixed(2)}${fxPct != null ? ` (${fxPct >= 0 ? '+' : ''}${fxPct.toFixed(2)}% vs list day)` : ''}`
-    : '';
-
-  setHTML('plastics-content', `
-    ${intlBlock}
-    ${sections}
-    <div class="plastic-meta">
-      <span class="badge-indicative">◆ List rates</span>
-      Updated ${esc(data.updated || '—')} · ${esc(data.source || '')}${fxNote}
-    </div>
-  `);
 }
 
 // ── Pakistan daily commodities (with graphs + forecast) ─────────────────────
@@ -480,7 +435,7 @@ function renderPakCom(data) {
   pakcomData = data;
 
   const sections = data.sections.map((sec, si) => `
-    <div class="plastic-section-title">${SECTION_ICONS[sec.title] || '📦'} ${esc(sec.title)}</div>
+    <div class="rate-section-title">${SECTION_ICONS[sec.title] || '📦'} ${esc(sec.title)}</div>
     <div class="pakcom-grid">
       ${(sec.items ?? []).map((i, ii) => {
         const hist = i.history ?? [];
@@ -504,7 +459,7 @@ function renderPakCom(data) {
 
   setHTML('pakcom-content', `
     ${sections}
-    <div class="plastic-meta">
+    <div class="rate-meta">
       ${data.liveFuel ? '<span class="badge-live">● Live fuel</span>' : '<span class="badge-indicative">◆ Reference</span>'}
       Updated ${esc(data.updated || '—')} · ${esc(data.source || '')} · Tap any item for graph &amp; 30-day forecast
     </div>
@@ -1084,11 +1039,6 @@ const MODULES = [
     render: data => renderCurrencies(data),
   },
   {
-    name: 'plastics',
-    endpoint: '/api/plastics',
-    render: data => renderPlastics(data),
-  },
-  {
     name: 'pakcom',
     endpoint: '/api/pakcom',
     render: data => renderPakCom(data),
@@ -1226,26 +1176,67 @@ function pakistanSurprise() {
   chime(392, 523);
 }
 
+// Rain a burst of emoji down the screen (chai, biryani, paisa…)
+function emojiRain(emoji, count) {
+  const layer = document.createElement('div');
+  layer.className = 'emoji-rain';
+  document.body.appendChild(layer);
+
+  for (let i = 0; i < (count || 26); i++) {
+    const span = document.createElement('span');
+    span.textContent = emoji;
+    span.style.left = Math.random() * 100 + 'vw';
+    span.style.fontSize = (Math.random() * 22 + 20) + 'px';
+    span.style.animationDelay = (Math.random() * 1.2).toFixed(2) + 's';
+    span.style.animationDuration = (Math.random() * 1.6 + 2.4).toFixed(2) + 's';
+    layer.appendChild(span);
+  }
+  setTimeout(() => layer.remove(), 5200);
+}
+
+function shakeScreen() {
+  document.body.classList.add('shaking');
+  setTimeout(() => document.body.classList.remove('shaking'), 700);
+}
+
 function initEasterEggs() {
   const KONAMI = 'arrowup,arrowup,arrowdown,arrowdown,arrowleft,arrowright,arrowleft,arrowright,b,a';
+
+  // typed words → surprise. Each entry fires once per typing, then clears.
+  const WORDS = [
+    { word: 'moon',    run: () => { unlock('moon'); launchRocket(); toast('🚀', 'To the moon!', 'BTC bhi khush ho gaya'); } },
+    { word: 'chai',    run: () => { unlock('chai'); emojiRain('☕', 24); toast('☕', 'Chai break!', 'Rates baad mein, pehle chai'); chime(440, 587); } },
+    { word: 'biryani', run: () => { unlock('biryani'); emojiRain('🍛', 26); toast('🍛', 'Biryani time!', 'Aloo wali hi asli hai, larai mat karo'); chime(392, 523); } },
+    { word: 'paisa',   run: () => { unlock('paisa'); emojiRain('💸', 34); toast('💸', 'Paisa hi paisa!', 'Sirf screen pe — asli wala kahan hai?'); chime(523, 784); } },
+    { word: 'boom',    run: () => { unlock('boom'); shakeScreen(); toast('💥', 'BOOM BOOM!', 'Afridi ne chakka mara'); chime(330, 440); } },
+  ];
+
   let keyBuf = [];
   document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
     keyBuf.push(e.key.toLowerCase());
-    if (keyBuf.length > 12) keyBuf.shift();
+    if (keyBuf.length > 14) keyBuf.shift();
+
     if (keyBuf.slice(-10).join(',') === KONAMI) {
       keyBuf = [];
       unlock('konami');
       matrixRain(5000);
       chime(392, 523);
+      return;
     }
-    if (keyBuf.slice(-4).join('') === 'moon') {
-      keyBuf = [];
-      unlock('moon');
-      launchRocket();
-      toast('🚀', 'To the moon!', 'BTC bhi khush ho gaya');
+    for (const w of WORDS) {
+      if (keyBuf.slice(-w.word.length).join('') === w.word) {
+        keyBuf = [];
+        w.run();
+        return;
+      }
     }
   });
 
+  // tap BTC five times → diamond hands
   let btcClicks = 0, btcTimer;
   document.addEventListener('click', e => {
     const item = e.target.closest('.crypto-item');
@@ -1262,6 +1253,41 @@ function initEasterEggs() {
       chime(523, 659);
     }
   });
+
+  // click the banter line → instant fresh roast
+  el('banter')?.addEventListener('click', () => {
+    showBanter();
+    unlock('roasted');
+  });
+
+  // spam the refresh button → get roasted for it
+  let refreshHits = 0, refreshTimer;
+  el('refreshAll')?.addEventListener('click', () => {
+    refreshHits++;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { refreshHits = 0; }, 12000);
+    if (refreshHits === 8) {
+      unlock('impatient');
+      toast('😮‍💨', 'Sabar karo!', 'Itna refresh karne se rate nahi badlega');
+      shakeScreen();
+    }
+  });
+
+  // walk away for a while → the site notices
+  let idleTimer;
+  const resetIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (document.visibilityState === 'visible' && el('zenOverlay')?.hidden !== false) {
+        unlock('sleepy');
+        toast('😴', 'So gaye kya?', 'Screen khuli hai, tum ghayab ho');
+      }
+    }, 120000);
+  };
+  ['mousemove', 'keydown', 'touchstart', 'scroll'].forEach(ev =>
+    document.addEventListener(ev, resetIdle, { passive: true })
+  );
+  resetIdle();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

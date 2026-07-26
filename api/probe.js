@@ -1,4 +1,4 @@
-// Diagnostic: shows which external rate sources are reachable from Vercel's
+// Diagnostic: shows which external data sources are reachable from Vercel's
 // servers and what values each yields. Open /api/probe in a browser after
 // deploying — no guessing about scrapability.
 const { SOURCES, fetchSource } = require('./_fuel-sources.js');
@@ -7,9 +7,13 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
 const EXTRA = [
-  { name: 'SunSirs PP (uk)', url: 'https://www.sunsirs.com/uk/prodetail-718.html', re: /(\d{1,2},?\d{3}\.\d{2})/ },
-  { name: 'SunSirs PP (mobile)', url: 'https://www.sunsirs.com/m/page/commodity-price-detail/commodity-price-detail-718.html', re: /(\d{1,2},?\d{3}\.\d{2})/ },
-  { name: 'Zaraye dana rates', url: 'https://www.zaraye.co/plastic-dana-rate-today', re: /(?:Rs\.?|PKR)\s*([\d,]{2,6})/i },
+  { name: 'Spotify Pakistan Daily (kworb)', url: 'https://kworb.net/spotify/country/pk_daily.html', re: /track\/[^"]*"[^>]*>([^<]{3,80})</i },
+  { name: 'Spotify Global Daily (kworb)',   url: 'https://kworb.net/spotify/country/global_daily.html', re: /track\/[^"]*"[^>]*>([^<]{3,80})</i },
+  { name: 'Spotify Viral 50 (kworb)',       url: 'https://kworb.net/spotify/country/global_viral.html', re: /track\/[^"]*"[^>]*>([^<]{3,80})</i },
+  { name: 'YouTube Pakistan Daily (kworb)', url: 'https://kworb.net/youtube/insights/pk_daily.html', re: /(?:track|video)\/[^"]*"[^>]*>([^<]{3,80})</i },
+  { name: 'iTunes Pakistan RSS',            url: 'https://itunes.apple.com/pk/rss/topsongs/limit=5/json', re: /"im:name":\s*\{"label":"([^"]{2,60})"/i },
+  { name: 'Apple Music PK most-played',     url: 'https://rss.applemarketingtools.com/api/v2/pk/music/most-played/5/songs.json', re: /"name":\s*"([^"]{2,60})"/i },
+  { name: 'Deezer chart',                   url: 'https://api.deezer.com/chart/0/tracks?limit=5', re: /"title":\s*"([^"]{2,60})"/i },
 ];
 
 async function probeExtra(src) {
@@ -49,16 +53,18 @@ module.exports = async function handler(req, res) {
       diesel: r.diesel ?? null,
       error: r.error ?? null,
     })),
-    plasticSources: extra,
+    chartSources: extra,
     verdict: {
       fuel:
         fuel.find(r => r.petrol && r.diesel)?.name
           ? `Live fuel via: ${fuel.find(r => r.petrol && r.diesel).name}`
           : 'No fuel source reachable — reference rates shown',
-      plastics:
-        extra.find(r => r.sample)?.source
-          ? `Live polymer reference via: ${extra.find(r => r.sample).source}`
-          : 'No polymer source reachable — FX adjustment + daily photo remain the live layers',
+      charts: (() => {
+        const ok = extra.filter(r => r.sample).map(r => r.source);
+        return ok.length
+          ? `Live chart sources reachable (${ok.length}/${extra.length}): ${ok.join(', ')}`
+          : 'No chart source reachable from this deployment';
+      })(),
     },
   });
 };

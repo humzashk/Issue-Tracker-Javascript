@@ -1,72 +1,27 @@
-// Global top 10 trending songs.
-// Layer 1: YouTube trending (music category, US) — live, current-date data.
-//          Requires YOUTUBE_API_KEY (free at console.cloud.google.com).
-// Layer 2: Deezer's real-time global chart — no key, always current.
-async function getJSON(url) {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
-}
-
-async function findPreview(title, artist) {
-  try {
-    const term = encodeURIComponent(`${title} ${artist}`.replace(/\(.*?\)|\[.*?\]|official|video|lyrics/gi, '').trim());
-    const j = await getJSON(`https://itunes.apple.com/search?term=${term}&media=music&entity=song&limit=1`);
-    return j?.results?.[0]?.previewUrl ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function fromYouTube(regionCode, apiKey) {
-  const url =
-    'https://www.googleapis.com/youtube/v3/videos' +
-    `?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=${regionCode}&maxResults=10&key=${apiKey}`;
-  const j = await getJSON(url);
-  const items = j?.items ?? [];
-  if (!items.length) throw new Error('empty');
-  return Promise.all(
-    items.map(async v => ({
-      title: v.snippet?.title ?? '',
-      subtitle: v.snippet?.channelTitle ?? '',
-      image: v.snippet?.thumbnails?.medium?.url ?? v.snippet?.thumbnails?.default?.url ?? null,
-      preview: await findPreview(v.snippet?.title ?? '', ''),
-    }))
-  );
-}
-
-async function fromDeezerChart() {
-  const chart = await getJSON('https://api.deezer.com/chart/0/tracks?limit=10');
-  const tracks = chart?.data ?? [];
-  return tracks.slice(0, 10).map(t => ({
-    title: t.title ?? '',
-    subtitle: t.artist?.name ?? '',
-    image: t.album?.cover_medium ?? t.album?.cover ?? null,
-    preview: t.preview ?? null,
-  }));
-}
+// Global trending songs — keyless.
+// Waterfall: Spotify global daily chart → Deezer live chart → Apple feeds.
+// Add ?debug=1 to see which sources were tried.
+const C = require('./_charts.js');
 
 module.exports = async function handler(req, res) {
+  const debug = req.query?.debug === '1';
   try {
-    const key = process.env.YOUTUBE_API_KEY;
-    let data;
-    let source;
+    const { rows, source, attempts } = await C.waterfall([
+      { name: 'Spotify Global Daily Top 200', run: () => C.kworb('spotify/country/global_daily.html') },
+      { name: 'Deezer Global Chart',          run: () => C.deezerChart() },
+      { name: 'Apple Music Global',           run: () => C.appleMostPlayed('us') },
+      { name: 'iTunes Top Songs',             run: () => C.itunesRss('us') },
+    ]);
 
-    if (key) {
-      try {
-        data = await fromYouTube('US', key);
-        source = 'YouTube Trending Music (Global/US) — live';
-      } catch {}
-    }
-    if (!data?.length) {
-      data = await fromDeezerChart();
-      source = 'Deezer Global Chart — live';
-    }
-
+    const data = await C.enrichAll(rows, 10);
     res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
-    res.json({ success: true, data, source });
+    res.json({ success: true, data, source, ...(debug ? { attempts } : {}) });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: 'Data source is temporarily unavailable' });
+    res.status(502).json({
+      success: false,
+      message: 'Global chart sources are temporarily unavailable',
+      ...(debug ? { attempts: err.attempts } : {}),
+    });
   }
 };
