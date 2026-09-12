@@ -1,132 +1,282 @@
-// Pakistani market rates: Gold & Silver per tola (scraped from gold.pk,
-// with a computed fallback), Copper per lb in PKR, Crude Oil (Brent) and
-// WTI in USD.
+// Pakistani market commodity rates.
 //
-// 1 tola = 11.6638038 g = exactly 0.375 troy oz — used for the fallback
-// when gold.pk can't be scraped.
+// Gold & silver come from gold.pk (the Karachi Sarafa / local market rate),
+// NOT from international spot converted to PKR — local rates carry duty and
+// a market premium, so a spot conversion reads several thousand rupees low.
+// Spot is still fetched, but only as a plausibility yardstick for validating
+// what was scraped, and as a clearly-labelled fallback if gold.pk is down.
+//
+// Add ?debug=1 to any request to see the scrape candidates and why one won.
 
-const TROY_OZ_PER_TOLA = 0.375;
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+const TROY_OZ_PER_TOLA = 0.375; // 1 tola = 11.6638 g = exactly 0.375 troy oz
+
+const GOLD_PK_URLS = [
+  'https://www.gold.pk/',
+  'https://gold.pk/',
+  'https://www.gold.pk/gold-rate-in-pakistan.html',
+  'https://www.gold.pk/karachi-gold-rates.html',
+];
+
+async function fetchWith(url, timeoutMs = 8000, accept = 'text/html') {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: accept, 'Accept-Language': 'en-US,en;q=0.9' },
+      signal: ctrl.signal,
+      redirect: 'follow',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function fetchYahooPrice(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; LiveRates/1.0)',
-      Accept: 'application/json',
-    },
-  });
-  if (!res.ok) throw new Error(`Yahoo Finance ${symbol}: ${res.status}`);
+  const res = await fetchWith(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`,
+    7000,
+    'application/json'
+  );
   const json = await res.json();
   const meta = json?.chart?.result?.[0]?.meta;
   return meta?.regularMarketPrice ?? meta?.previousClose ?? null;
 }
 
 async function fetchPKRRate() {
-  const res = await fetch('https://open.er-api.com/v6/latest/USD', {
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`Exchange rate API: ${res.status}`);
+  const res = await fetchWith('https://open.er-api.com/v6/latest/USD', 7000, 'application/json');
   const json = await res.json();
-  return json?.rates?.PKR ?? null;
+  const pkr = json?.rates?.PKR;
+  if (!pkr) throw new Error('PKR rate missing');
+  return pkr;
 }
 
-// Best-effort scrape of gold.pk for the 24k 1-tola gold rate and 1-tola
-// silver rate. Page structure can change, so any failure returns null and
-// the caller falls back to the computed rate.
-async function scrapeGoldPk() {
-  try {
-    const res = await fetch('https://gold.pk/', {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-        Accept: 'text/html',
-      },
-    });
-    if (!res.ok) return { gold: null, silver: null };
-    const html = await res.text();
+// gold.pk publishes rates in tables where the UNIT lives in the header row
+// and the PURITY in the first cell, so a plain proximity search mis-reads it
+// (the "per 10 gram" header sits as close to a value as "per tola" does).
+// These helpers keep rows and columns intact instead.
+function htmlToRows(html) {
+  const flat = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<\/(tr|table|p|div|li|h\d)>|<br\s*\/?>/gi, '\n')
+    .replace(/<\/(td|th)>/gi, ' | ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
 
-    // Look for PKR amounts near "tola" mentions, e.g. "Rs. 241,500" or "241500"
-    const findRate = keyword => {
-      const re = new RegExp(
-        keyword + String.raw`[^]{0,400}?(?:Rs\.?|PKR)\s*([\d,]{4,})`,
-        'i'
-      );
-      const m = html.match(re);
-      if (!m) return null;
-      const n = parseInt(m[1].replace(/,/g, ''), 10);
-      return Number.isFinite(n) && n > 100 ? n : null;
-    };
+  return flat
+    .split('\n')
+    .map(r => r.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean);
+}
 
-    return {
-      gold: findRate(String.raw`gold[^]{0,200}?tola|tola[^]{0,200}?gold|24k`),
-      silver: findRate(String.raw`silver[^]{0,200}?tola|tola[^]{0,200}?silver`),
-    };
-  } catch {
-    return { gold: null, silver: null };
+const splitCells = row => row.split('|').map(c => c.trim()).filter(Boolean);
+
+function toAmount(cell) {
+  const m = cell.match(/([\d][\d,]{2,12})(?:\.\d+)?/);
+  if (!m) return null;
+  const v = parseInt(m[1].replace(/,/g, ''), 10);
+  return Number.isFinite(v) && v >= 100 ? v : null;
+}
+
+const isTola = t => /\btola\b/i.test(t);
+const isOtherUnit = t => /\d+\s*gram|\bgram\b|\bounce\b|\boz\b|\bmasha\b/i.test(t);
+
+// Row label describes the metal (and, for gold, 24K rather than 22/21/18K)
+function labelMatches(label, metal) {
+  const t = label.toLowerCase();
+  if (/phone|call|whatsapp|contact|\+92/.test(t)) return false;
+  if (metal === 'gold') {
+    if (!/gold|karat|carat|\b2[1248]\s*k\b/.test(t)) return false;
+    if (/\b(22|21|18|14|12|10)\s*(k|karat|carat)\b/.test(t)) return false;
+    return true;
   }
+  return /silver|chandi/.test(t) && !/gold/.test(t);
+}
+
+// Strategy A — table with a unit header row: take the value under "per tola".
+function findByColumn(rows, metal) {
+  let tolaCol = null;
+  for (const row of rows) {
+    const cells = splitCells(row);
+    const idx = cells.findIndex(isTola);
+    if (idx > 0 && cells.every(c => toAmount(c) === null || isTola(c) || isOtherUnit(c))) {
+      tolaCol = idx;
+      continue;
+    }
+    if (tolaCol == null) continue;
+
+    if (cells.length > tolaCol && labelMatches(cells[0], metal)) {
+      const value = toAmount(cells[tolaCol]);
+      if (value != null) return { value, how: `column ${tolaCol} under a "per tola" header`, context: row.slice(0, 90) };
+    }
+  }
+  return null;
+}
+
+// Strategy B — the unit word sits in the same row as the number
+// (e.g. "24K Gold Per Tola | Rs 442,300").
+function findByRow(rows, metal) {
+  for (const row of rows) {
+    if (!isTola(row)) continue;
+    const cells = splitCells(row);
+    const label = cells.find(c => toAmount(c) === null) ?? cells[0] ?? '';
+    if (!labelMatches(label + ' ' + row, metal)) continue;
+
+    for (const cell of cells) {
+      if (isOtherUnit(cell) && !isTola(cell)) continue;
+      const value = toAmount(cell);
+      if (value != null) return { value, how: 'same row as the word "tola"', context: row.slice(0, 90) };
+    }
+  }
+  return null;
+}
+
+// Plausibility guard: a local Pakistani rate sits at or a little above the
+// spot-derived value (duty + market premium) — never far below, never wildly
+// above. Keeps a mis-parse from ever reaching the card.
+function plausible(value, expected) {
+  if (value == null) return false;
+  if (!expected) return value > 0;
+  return value >= expected * 0.80 && value <= expected * 1.90;
+}
+
+function findRate(rows, metal, expected) {
+  for (const [name, fn] of [['column', findByColumn], ['row', findByRow]]) {
+    const hit = fn(rows, metal);
+    if (hit && plausible(hit.value, expected)) return { ...hit, strategy: name };
+  }
+  return null;
+}
+
+async function scrapeGoldPk(expectedGold, expectedSilver) {
+  const tried = [];
+  for (const url of GOLD_PK_URLS) {
+    try {
+      const res = await fetchWith(url);
+      const rows = htmlToRows(await res.text());
+      const gold = findRate(rows, 'gold', expectedGold);
+      const silver = findRate(rows, 'silver', expectedSilver);
+      tried.push({
+        url,
+        ok: true,
+        rowCount: rows.length,
+        gold: gold ? { value: gold.value, via: gold.how, context: gold.context } : null,
+        silver: silver ? { value: silver.value, via: silver.how, context: silver.context } : null,
+      });
+      if (gold) return { gold, silver, url, tried };
+    } catch (e) {
+      tried.push({ url, ok: false, error: String(e.message).slice(0, 60) });
+    }
+  }
+  return { gold: null, silver: null, url: null, tried };
 }
 
 module.exports = async function handler(req, res) {
-  const [scraped, pkrRate, goldOz, silverOz, copperLb, brent, wti] = await Promise.all([
-    scrapeGoldPk(),
-    fetchPKRRate().catch(() => null),
-    fetchYahooPrice('GC=F').catch(() => null),
-    fetchYahooPrice('SI=F').catch(() => null),
-    fetchYahooPrice('HG=F').catch(() => null),
-    fetchYahooPrice('BZ=F').catch(() => null),
-    fetchYahooPrice('CL=F').catch(() => null),
+  const debug = req.query?.debug === '1';
+
+  const [pkrR, goldOzR, silverOzR, copperR, brentR, wtiR] = await Promise.allSettled([
+    fetchPKRRate(),
+    fetchYahooPrice('GC=F'),
+    fetchYahooPrice('SI=F'),
+    fetchYahooPrice('HG=F'),
+    fetchYahooPrice('BZ=F'),
+    fetchYahooPrice('CL=F'),
   ]);
 
-  const tolaFromSpot = ozPrice =>
-    ozPrice != null && pkrRate ? Math.round(ozPrice * TROY_OZ_PER_TOLA * pkrRate) : null;
+  const val = r => (r.status === 'fulfilled' ? r.value : null);
+  const pkr = val(pkrR);
+  const goldOz = val(goldOzR);
+  const silverOz = val(silverOzR);
+  const copperLb = val(copperR);
+  const brent = val(brentR);
+  const wti = val(wtiR);
 
-  const data = [
-    {
-      id: 'gold',
-      name: 'Gold (24k)',
-      unit: 'per tola',
-      price: scraped.gold ?? tolaFromSpot(goldOz),
-      currency: 'PKR',
-      source: scraped.gold ? 'gold.pk' : 'spot price (converted)',
-    },
-    {
-      id: 'silver',
-      name: 'Silver',
-      unit: 'per tola',
-      price: scraped.silver ?? tolaFromSpot(silverOz),
-      currency: 'PKR',
-      source: scraped.silver ? 'gold.pk' : 'spot price (converted)',
-    },
-    {
-      id: 'copper',
-      name: 'Copper',
-      unit: 'per pound',
-      price: copperLb != null && pkrRate ? Math.round(copperLb * pkrRate) : null,
-      currency: 'PKR',
-      source: 'spot price (converted)',
-    },
-    {
-      id: 'oil-brent',
-      name: 'Crude Oil (Brent)',
-      unit: 'per barrel',
-      price: brent,
-      currency: 'USD',
-      source: 'Yahoo Finance',
-    },
-    {
-      id: 'oil-wti',
-      name: 'Crude Oil (WTI)',
-      unit: 'per barrel',
-      price: wti,
-      currency: 'USD',
-      source: 'Yahoo Finance',
-    },
-  ].filter(c => c.price != null);
+  const spotTola = ozPrice =>
+    ozPrice != null && pkr ? Math.round(ozPrice * TROY_OZ_PER_TOLA * pkr) : null;
 
-  if (!data.length) {
-    return res.status(500).json({ success: false, message: 'Could not fetch commodity prices' });
+  const expectedGold = spotTola(goldOz);
+  const expectedSilver = spotTola(silverOz);
+
+  let scraped = { gold: null, silver: null, url: null, tried: [] };
+  try {
+    scraped = await scrapeGoldPk(expectedGold, expectedSilver);
+  } catch (e) {
+    console.error('gold.pk scrape failed:', e.message);
   }
 
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-  res.json({ success: true, data, source: 'gold.pk / Yahoo Finance / ExchangeRate API' });
+  const data = [];
+
+  data.push({
+    id: 'gold',
+    name: 'Gold (24k)',
+    unit: 'per tola',
+    price: scraped.gold?.value ?? expectedGold,
+    currency: 'PKR',
+    live: Boolean(scraped.gold),
+    source: scraped.gold ? 'gold.pk — local market' : 'international spot (converted)',
+  });
+
+  data.push({
+    id: 'silver',
+    name: 'Silver',
+    unit: 'per tola',
+    price: scraped.silver?.value ?? expectedSilver,
+    currency: 'PKR',
+    live: Boolean(scraped.silver),
+    source: scraped.silver ? 'gold.pk — local market' : 'international spot (converted)',
+  });
+
+  if (copperLb != null && pkr) {
+    data.push({
+      id: 'copper', name: 'Copper', unit: 'per pound',
+      price: Math.round(copperLb * pkr), currency: 'PKR',
+      live: true, source: 'LME spot (converted)',
+    });
+  }
+  if (brent != null) {
+    data.push({
+      id: 'oil-brent', name: 'Crude Oil (Brent)', unit: 'per barrel',
+      price: brent, currency: 'USD', live: true, source: 'Yahoo Finance',
+    });
+  }
+  if (wti != null) {
+    data.push({
+      id: 'oil-wti', name: 'Crude Oil (WTI)', unit: 'per barrel',
+      price: wti, currency: 'USD', live: true, source: 'Yahoo Finance',
+    });
+  }
+
+  const usable = data.filter(d => d.price != null);
+  if (!usable.length) {
+    return res.status(502).json({ success: false, message: 'Could not fetch commodity prices' });
+  }
+
+  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1200');
+  res.json({
+    success: true,
+    data: usable,
+    goldSource: scraped.gold ? `gold.pk (${scraped.url})` : 'international spot fallback',
+    source: 'gold.pk / Yahoo Finance / ExchangeRate API',
+    ...(debug
+      ? {
+          debug: {
+            usdPkr: pkr,
+            spotGoldUsdPerOz: goldOz,
+            spotSilverUsdPerOz: silverOz,
+            expectedGoldTolaFromSpot: expectedGold,
+            expectedSilverTolaFromSpot: expectedSilver,
+            acceptWindow: expectedGold
+              ? { min: Math.round(expectedGold * 0.8), max: Math.round(expectedGold * 1.9) }
+              : null,
+            attempts: scraped.tried,
+          },
+        }
+      : {}),
+  });
 };

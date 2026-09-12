@@ -9,10 +9,11 @@ const UA =
 const EXTRA = [
   { name: 'Spotify Pakistan Daily (kworb)', url: 'https://kworb.net/spotify/country/pk_daily.html', re: /track\/[^"]*"[^>]*>([^<]{3,80})</i },
   { name: 'Spotify Global Daily (kworb)',   url: 'https://kworb.net/spotify/country/global_daily.html', re: /track\/[^"]*"[^>]*>([^<]{3,80})</i },
-  { name: 'Spotify Viral 50 (kworb)',       url: 'https://kworb.net/spotify/country/global_viral.html', re: /track\/[^"]*"[^>]*>([^<]{3,80})</i },
   { name: 'YouTube Pakistan Daily (kworb)', url: 'https://kworb.net/youtube/insights/pk_daily.html', re: /(?:track|video)\/[^"]*"[^>]*>([^<]{3,80})</i },
   { name: 'iTunes Pakistan RSS',            url: 'https://itunes.apple.com/pk/rss/topsongs/limit=5/json', re: /"im:name":\s*\{"label":"([^"]{2,60})"/i },
   { name: 'Apple Music PK most-played',     url: 'https://rss.applemarketingtools.com/api/v2/pk/music/most-played/5/songs.json', re: /"name":\s*"([^"]{2,60})"/i },
+  { name: 'gold.pk (www)',                  url: 'https://www.gold.pk/', re: /([\d][\d,]{4,9})/ },
+  { name: 'gold.pk (apex)',                 url: 'https://gold.pk/', re: /([\d][\d,]{4,9})/ },
   { name: 'Deezer chart',                   url: 'https://api.deezer.com/chart/0/tracks?limit=5', re: /"title":\s*"([^"]{2,60})"/i },
 ];
 

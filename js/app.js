@@ -269,7 +269,7 @@ function renderCommodities(data) {
         <span class="commodity-icon">${icons[c.id] || '📊'}</span>
         <div>
           <div class="commodity-label">${esc(c.name)}</div>
-          <div class="commodity-sub">${esc(c.unit)}</div>
+          <div class="commodity-sub">${esc(c.unit)}${c.source ? ` · ${esc(c.source)}` : ''}</div>
         </div>
       </div>
       <div class="commodity-price-group">
@@ -279,7 +279,12 @@ function renderCommodities(data) {
     </div>
   `).join('');
 
-  setHTML('commodities-content', `<div class="commodity-list">${items}</div>`);
+  const goldLive = data.find(c => c.id === 'gold')?.live;
+  const note = goldLive
+    ? '<span class="badge-live">● Live</span> Gold &amp; silver from gold.pk local market'
+    : '<span class="badge-indicative">◆ Fallback</span> gold.pk unreachable — showing international spot converted to PKR';
+
+  setHTML('commodities-content', `<div class="commodity-list">${items}</div><div class="rate-meta">${note}</div>`);
 }
 
 function renderMood(data) {
@@ -710,7 +715,7 @@ async function resolveRound() {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
-const searchIndex = { crypto: [], commodities: [], movies: [], music: [], musicpk: [], reels: [] };
+const searchIndex = { crypto: [], commodities: [], movies: [], music: [], musicpk: [] };
 
 function indexCrypto(data) {
   searchIndex.crypto = (data ?? []).map(c => ({
@@ -764,7 +769,6 @@ function runSearch(q) {
     ...searchIndex.movies,
     ...searchIndex.music,
     ...searchIndex.musicpk,
-    ...searchIndex.reels,
   ];
 
   const hits = all.filter(item => item.keys.includes(raw) || item.keys.split(' ').some(w => w.startsWith(raw)));
@@ -1027,21 +1031,6 @@ const MODULES = [
     name: 'musicpk',
     endpoint: '/api/music-pk',
     render: data => { renderRanked('musicpk-content', data); indexRanked('musicpk', data); },
-  },
-  {
-    name: 'reels',
-    endpoint: '/api/reels',
-    render: data => { renderRanked('reels-content', data); indexRanked('reels', data); },
-  },
-  {
-    name: 'currencies',
-    endpoint: '/api/forex',
-    render: data => renderCurrencies(data),
-  },
-  {
-    name: 'pakcom',
-    endpoint: '/api/pakcom',
-    render: data => renderPakCom(data),
   },
 ];
 
