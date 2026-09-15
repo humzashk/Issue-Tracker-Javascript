@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/pakcom.js": {
+      "includeFiles": "data/**"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

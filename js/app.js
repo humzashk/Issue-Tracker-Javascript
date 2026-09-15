@@ -1032,6 +1032,16 @@ const MODULES = [
     endpoint: '/api/music-pk',
     render: data => { renderRanked('musicpk-content', data); indexRanked('musicpk', data); },
   },
+  {
+    name: 'currencies',
+    endpoint: '/api/forex',
+    render: data => renderCurrencies(data),
+  },
+  {
+    name: 'pakcom',
+    endpoint: '/api/pakcom',
+    render: data => renderPakCom(data),
+  },
 ];
 
 async function loadModule(mod) {

@@ -9,16 +9,21 @@ const fs = require('fs');
 const path = require('path');
 const { getLiveFuel } = require('./_fuel-sources.js');
 
+const DATA_PATH = path.join(process.cwd(), 'data', 'pak-commodities.json');
+
 module.exports = async function handler(req, res) {
+  const debug = req.query?.debug === '1';
   let json;
   try {
-    const raw = fs.readFileSync(path.join(process.cwd(), 'data', 'pak-commodities.json'), 'utf-8');
+    const raw = fs.readFileSync(DATA_PATH, 'utf-8');
     json = JSON.parse(raw);
   } catch (err) {
-    console.error(err);
-    return res
-      .status(500)
-      .json({ success: false, message: 'Commodity rates are temporarily unavailable' });
+    console.error('pak-commodities.json read failed:', DATA_PATH, err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Commodity rates are temporarily unavailable',
+      ...(debug ? { debug: { path: DATA_PATH, error: err.message } } : {}),
+    });
   }
 
   let liveFuel = false;
