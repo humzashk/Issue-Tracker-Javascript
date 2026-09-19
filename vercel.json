@@ -4,6 +4,12 @@
       "includeFiles": "data/**"
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron-update-history",
+      "schedule": "0 18 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

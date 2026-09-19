@@ -39,9 +39,14 @@ module.exports = async function handler(req, res) {
           /diesel/i.test(item.name) ? fuel.diesel : null;
         if (live) {
           item.rate = live;
+          item.liveNow = true; // this request scraped it live, right now
           liveFuel = true;
           fuelSource = fuel.source;
-          // extend history with today's live point so charts stay current
+          // Extend history with today's point so the chart doesn't stop at
+          // the last saved date. This is in-memory only — it does NOT write
+          // back to data/pak-commodities.json, so it resets on every request
+          // unless the daily cron (api/cron-update-history.js) has already
+          // persisted today's point, in which case this just refreshes it.
           const hist = item.history ?? (item.history = []);
           const last = hist[hist.length - 1];
           if (!last || last[0] !== today) hist.push([today, live]);

@@ -471,7 +471,12 @@ function renderPakCom(data) {
   `);
 }
 
-function lineChartSVG(history, forecast) {
+// Consecutive history points more than this many days apart get drawn as a
+// dashed "no data recorded" segment instead of a solid trend line, so a
+// sparse or stale series never reads as smooth continuous data.
+const CHART_GAP_DAYS = 10;
+
+function lineChartSVG(history, forecast, liveNow) {
   const W = 560, H = 220, PAD = 34;
   const pts = history.map(h => ({ t: new Date(h[0]).getTime(), v: h[1] }));
   const fT = forecast ? pts[pts.length - 1].t + 30 * 86400000 : null;
@@ -482,8 +487,36 @@ function lineChartSVG(history, forecast) {
   const x = t => PAD + ((t - minT) / (maxT - minT || 1)) * (W - PAD * 2);
   const y = v => H - PAD - ((v - minV) / (maxV - minV || 1)) * (H - PAD * 2);
 
-  const line = pts.map(p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
   const last = pts[pts.length - 1];
+  const DAY = 86400000;
+
+  // Build one polyline per run of closely-spaced points; a run breaks (and
+  // gets bridged with a dashed "gap" line) wherever two real points are more
+  // than CHART_GAP_DAYS apart.
+  const segments = [];
+  let current = [pts[0]];
+  const gapLines = [];
+  for (let i = 1; i < pts.length; i++) {
+    const gapDays = (pts[i].t - pts[i - 1].t) / DAY;
+    if (gapDays > CHART_GAP_DAYS) {
+      segments.push(current);
+      gapLines.push([pts[i - 1], pts[i], Math.round(gapDays)]);
+      current = [pts[i]];
+    } else {
+      current.push(pts[i]);
+    }
+  }
+  segments.push(current);
+
+  const solidLines = segments
+    .filter(seg => seg.length > 1)
+    .map(seg => `<polyline class="chart-line" points="${seg.map(p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')}"/>`)
+    .join('');
+
+  const dashedLines = gapLines.map(([a, b, days]) => `
+    <line x1="${x(a.t).toFixed(1)}" y1="${y(a.v).toFixed(1)}" x2="${x(b.t).toFixed(1)}" y2="${y(b.v).toFixed(1)}" class="chart-gap-line"/>
+    <text x="${((x(a.t) + x(b.t)) / 2).toFixed(1)}" y="${(Math.min(y(a.v), y(b.v)) - 8).toFixed(1)}" class="chart-axis chart-gap-label" text-anchor="middle">${days}d gap</text>
+  `).join('');
 
   const gridLines = [0, 0.5, 1].map(f => {
     const v = minV + (maxV - minV) * f;
@@ -501,12 +534,26 @@ function lineChartSVG(history, forecast) {
        <text x="${x(fT) - 6}" y="${y(forecast.value) - 10}" class="chart-axis" text-anchor="end">${Math.round(forecast.value)}</text>`
     : '';
 
+  const dots = pts
+    .map((p, i) => {
+      const isLast = i === pts.length - 1;
+      const cls = isLast && liveNow ? 'chart-dot chart-dot-live' : 'chart-dot';
+      return `<circle cx="${x(p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${isLast && liveNow ? 4 : 3}" class="${cls}"/>`;
+    })
+    .join('');
+
+  const liveLabel = liveNow
+    ? `<text x="${x(last.t).toFixed(1)}" y="${(y(last.v) - 12).toFixed(1)}" class="chart-axis chart-live-label" text-anchor="middle">live now</text>`
+    : '';
+
   return `
     <svg class="line-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
       ${gridLines}
       ${dateLabels}
-      <polyline class="chart-line" points="${line}"/>
-      ${pts.map(p => `<circle cx="${x(p.t)}" cy="${y(p.v)}" r="3" class="chart-dot"/>`).join('')}
+      ${dashedLines}
+      ${solidLines}
+      ${dots}
+      ${liveLabel}
       ${forecastLine}
     </svg>`;
 }
@@ -518,7 +565,7 @@ function openChart(si, ii) {
   const fc = linearForecast(item.history, 30);
   el('chartTitle').textContent = item.name;
   el('chartSub').textContent = `${item.unit} · current ${fmtPKR(item.rate)}`;
-  el('chartBody').innerHTML = lineChartSVG(item.history, fc);
+  el('chartBody').innerHTML = lineChartSVG(item.history, fc, item.liveNow);
 
   if (fc) {
     const diff = fc.value - item.rate;
