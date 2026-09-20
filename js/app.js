@@ -34,6 +34,24 @@ function fmtChange(pct) {
   return `<span class="${cls}">${pct > 0 ? '+' : ''}${pct.toFixed(2)}%</span>`;
 }
 
+// Shared ▲/▼ delta badge. Rounds to 2dp first (raw floating-point subtraction
+// like 389.14 - 299.5 produces 89.63999999999999, which must not reach the
+// screen). `invert` flips the color meaning for cost-of-living items, where
+// a price going UP is bad for the buyer (red) rather than good (green) —
+// crypto/gold/oil use invert:false (up = green, the usual market convention);
+// Pakistan Daily Rates uses invert:true (up = red).
+function fmtDeltaBadge(delta, { pct = null, invert = false } = {}) {
+  if (delta == null || !Number.isFinite(delta)) return '';
+  const rounded = Math.round(delta * 100) / 100;
+  if (Math.abs(rounded) < 0.005) return '<span class="neutral">— 0</span>';
+  const up = rounded > 0;
+  const cls = (invert ? !up : up) ? 'positive' : 'negative';
+  const arrow = up ? '▲' : '▼';
+  const shown = Math.abs(rounded) % 1 === 0 ? Math.abs(rounded).toFixed(0) : Math.abs(rounded).toFixed(2);
+  const pctStr = pct != null && Number.isFinite(pct) ? ` (${pct > 0 ? '+' : ''}${pct.toFixed(2)}%)` : '';
+  return `<span class="${cls}">${arrow} ${shown}${pctStr}</span>`;
+}
+
 function setHTML(id, html) {
   const t = el(id);
   if (t) t.innerHTML = html;
@@ -258,12 +276,62 @@ function renderCrypto(data) {
   setHTML('crypto-content', `<div class="crypto-grid">${items}</div>`);
 }
 
+// Gold/Silver/Copper/Oil have no server-side history (unlike Pakistan Daily
+// Rates, which is backed by a committed JSON file), so day-over-day change
+// is tracked client-side: one price point per calendar day (Asia/Karachi),
+// kept in localStorage. This needs no backend, no secrets, and no cron —
+// it just quietly builds up a real day-over-day record in each visitor's
+// own browser, and shows nothing extra until there are at least two days
+// of data to compare.
+const COMMODITY_HISTORY_KEY = 'lr_commodity_history';
+const COMMODITY_HISTORY_MAX = 120;
+
+function karachiToday() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+}
+
+function loadCommodityHistory() {
+  try { return JSON.parse(localStorage.getItem(COMMODITY_HISTORY_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function saveCommodityHistory(hist) {
+  try { localStorage.setItem(COMMODITY_HISTORY_KEY, JSON.stringify(hist)); } catch {}
+}
+
+// Records today's price (once per day, per id) and returns the previous
+// day's recorded price for that id, or null if there isn't one yet.
+function trackCommodityDay(id, price) {
+  if (price == null) return null;
+  const hist = loadCommodityHistory();
+  const arr = hist[id] ?? (hist[id] = []);
+  const today = karachiToday();
+  const last = arr[arr.length - 1];
+
+  let prev = null;
+  if (!last || last[0] !== today) {
+    prev = last ? last[1] : null;
+    arr.push([today, price]);
+    if (arr.length > COMMODITY_HISTORY_MAX) hist[id] = arr.slice(arr.length - COMMODITY_HISTORY_MAX);
+    saveCommodityHistory(hist);
+  } else {
+    prev = arr.length > 1 ? arr[arr.length - 2][1] : null;
+  }
+  return prev;
+}
+
 function renderCommodities(data) {
   if (!data?.length) { showError('commodities-content', 'No data returned'); return; }
 
   const icons = { gold: '🥇', silver: '🥈', copper: '🟤', 'oil-brent': '🛢️', 'oil-wti': '🛢️' };
 
-  const items = data.map(c => `
+  let anyDelta = false;
+  const items = data.map(c => {
+    const prev = trackCommodityDay(c.id, c.price);
+    const delta = prev != null && c.price != null ? c.price - prev : null;
+    const pct = delta != null && prev ? (delta / prev) * 100 : null;
+    if (delta != null) anyDelta = true;
+    return `
     <div class="commodity-item">
       <div class="commodity-name-group">
         <span class="commodity-icon">${icons[c.id] || '📊'}</span>
@@ -275,16 +343,22 @@ function renderCommodities(data) {
       <div class="commodity-price-group">
         <div class="commodity-price">${c.currency === 'PKR' ? fmtPKR(c.price) : fmtPrice(c.price, 2)}</div>
         <div class="commodity-unit">${c.currency || 'USD'}</div>
+        ${delta != null ? `<div class="commodity-change">${fmtDeltaBadge(delta, { pct })}</div>` : ''}
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   const goldLive = data.find(c => c.id === 'gold')?.live;
   const note = goldLive
     ? '<span class="badge-live">● Live</span> Gold &amp; silver from gold.pk local market'
     : '<span class="badge-indicative">◆ Fallback</span> gold.pk unreachable — showing international spot converted to PKR';
 
-  setHTML('commodities-content', `<div class="commodity-list">${items}</div><div class="rate-meta">${note}</div>`);
+  const deltaNote = anyDelta
+    ? ' · ▲▼ shows change since this browser last saw a new day\'s price'
+    : '';
+
+  setHTML('commodities-content', `<div class="commodity-list">${items}</div><div class="rate-meta">${note}${deltaNote}</div>`);
 }
 
 function renderMood(data) {
@@ -446,15 +520,13 @@ function renderPakCom(data) {
         const hist = i.history ?? [];
         const prev = hist.length > 1 ? hist[hist.length - 2][1] : null;
         const delta = prev != null ? i.rate - prev : null;
-        const cls = delta > 0 ? 'negative' : delta < 0 ? 'positive' : 'neutral';
-        const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '—';
         return `
         <div class="pakcom-item" data-si="${si}" data-ii="${ii}" title="Tap for graph & forecast">
           <div class="pakcom-name">${esc(i.name)}</div>
           <div class="pakcom-rate">${fmtPKR(i.rate)}</div>
           <div class="pakcom-foot">
             <span class="pakcom-unit">${esc(i.unit || '')}</span>
-            ${delta != null ? `<span class="${cls}">${arrow} ${Math.abs(delta)}</span>` : ''}
+            ${fmtDeltaBadge(delta, { invert: true })}
           </div>
           <span class="pakcom-chart-hint">📈</span>
         </div>`;
