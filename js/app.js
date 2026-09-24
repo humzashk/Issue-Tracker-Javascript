@@ -791,7 +791,8 @@ function aqiInfo(aqi) {
 function renderWeather(w, air) {
   if (!w?.current) { showError('weather-content', 'Weather unavailable right now'); return; }
   const c = w.current;
-  const [icon, label] = wxInfo(c.code, c.isDay);
+  const [icon, modelLabel] = wxInfo(c.code, c.isDay);
+  const label = c.label || modelLabel;
   const r = n => Math.round(n);
 
   let aqiChip = '';
@@ -824,15 +825,17 @@ function renderWeather(w, air) {
           </div>
         </div>
         <div class="wx-facts">
-          <span class="chip">💧 <b>${r(c.humidity)}%</b></span>
-          <span class="chip">💨 <b>${r(c.wind)}</b> km/h</span>
+          ${c.humidity != null ? `<span class="chip">💧 <b>${r(c.humidity)}%</b></span>` : ''}
+          ${c.wind != null ? `<span class="chip">💨 <b>${r(c.wind)}</b> km/h</span>` : ''}
           ${w.days[0]?.uv != null ? `<span class="chip">UV <b>${r(w.days[0].uv)}</b></span>` : ''}
           ${aqiChip}
         </div>
       </div>
       <div class="wx-days">${days}</div>
     </div>
-    <div class="meta">Open-Meteo forecast for Karachi</div>
+    <div class="meta">${c.source === 'observed' && c.observedAt
+      ? `Now: observed at Jinnah Airport, ${esc(new Date(c.observedAt).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: 'numeric', minute: '2-digit' }))} · Forecast: Open-Meteo`
+      : 'Open-Meteo model for Karachi'}</div>
   `);
 }
 

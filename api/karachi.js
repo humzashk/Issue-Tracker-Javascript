@@ -2,15 +2,27 @@
 //
 // Sources (all free, official APIs — no scraping, no keys):
 //   • Prayer times — Aladhan, method 1 (University of Islamic Sciences,
-//     Karachi) with Hanafi Asr (school=1), the convention mosques in Karachi
-//     follow. The date is pinned to Karachi's calendar day, not the server's.
-//   • Weather — Open-Meteo forecast (current conditions + 7 days).
+//     Karachi) with Hanafi Asr, at Karachi's exact coordinates, plus the
+//     ihtiyat (precautionary minutes) Pakistani timetables add — see TUNE.
+//     The date is pinned to Karachi's calendar day, not the server's.
+//   • Current weather — the real observation from Jinnah International
+//     Airport (METAR report OPKC via NOAA's aviationweather.gov, every
+//     30 min). A forecast model's "current" value can say "clear" while it
+//     is actually cloudy or hazy; an observation can't.
+//   • 7-day forecast — Open-Meteo (also the fallback for current weather).
 //   • Air quality — Open-Meteo air-quality (US AQI, PM2.5).
 // Each part fails independently: one source being down never blanks the
 // others.
 const LAT = 24.8607;
 const LON = 67.0011;
 const TZ = 'Asia/Karachi';
+
+// Minute offsets, in Aladhan's order: Imsak,Fajr,Sunrise,Dhuhr,Asr,Maghrib,
+// Sunset,Isha,Midnight. Matches the precautionary minutes on standard
+// Karachi timetables (IslamicFinder / MuslimPro, same method + Hanafi):
+// e.g. 24 Sep 2026 → Fajr 5:06, Dhuhr 12:26, Asr 4:46, Maghrib 6:29,
+// Isha 7:44, where the raw calculation gives 5:05, 12:24, 4:46, 6:26, 7:42.
+const TUNE = '0,1,0,2,0,3,0,2,0';
 
 async function getJSON(url, timeoutMs = 8000) {
   const ctrl = new AbortController();
@@ -34,8 +46,9 @@ const cleanTime = t => String(t ?? '').slice(0, 5); // "05:12 (PKT)" -> "05:12"
 
 async function fetchPrayer() {
   const j = await getJSON(
-    `https://api.aladhan.com/v1/timingsByCity/${karachiDateParam()}` +
-      '?city=Karachi&country=Pakistan&method=1&school=1'
+    `https://api.aladhan.com/v1/timings/${karachiDateParam()}` +
+      `?latitude=${LAT}&longitude=${LON}&timezonestring=${encodeURIComponent(TZ)}` +
+      `&method=1&school=1&tune=${TUNE}`
   );
   const t = j?.data?.timings;
   if (!t?.Fajr) throw new Error('no timings');
@@ -51,7 +64,7 @@ async function fetchPrayer() {
       { name: 'Maghrib', time: cleanTime(t.Maghrib) },
       { name: 'Isha', time: cleanTime(t.Isha) },
     ],
-    method: 'Univ. of Islamic Sciences, Karachi · Hanafi Asr',
+    method: 'Azan (start) times · Univ. of Islamic Sciences, Karachi · Hanafi Asr',
   };
 }
 
@@ -86,6 +99,69 @@ async function fetchWeather() {
   };
 }
 
+// ── Observed weather: METAR from Jinnah International (OPKC) ──────────────
+
+// Relative humidity from temperature and dew point (Magnus formula)
+function humidityFrom(t, td) {
+  const f = x => Math.exp((17.625 * x) / (243.04 + x));
+  return Math.round(Math.min(100, (100 * f(td)) / f(t)));
+}
+
+// NOAA heat index ("feels like") — only meaningful when hot; else air temp
+function feelsLike(t, rh) {
+  if (t < 27) return t;
+  const F = t * 9 / 5 + 32;
+  const hi = -42.379 + 2.04901523 * F + 10.14333127 * rh - 0.22475541 * F * rh
+    - 0.00683783 * F * F - 0.05481717 * rh * rh + 0.00122874 * F * F * rh
+    + 0.00085282 * F * rh * rh - 0.00000199 * F * F * rh * rh;
+  return ((hi - 32) * 5) / 9;
+}
+
+// METAR weather/cloud groups → a WMO-style code (what the card's icons use)
+// plus a plain-English label.
+function conditionFrom(wx, clouds) {
+  const w = String(wx || '');
+  if (/TS/.test(w)) return [95, 'Thunderstorm'];
+  if (/SH/.test(w) && /RA/.test(w)) return [80, 'Showers'];
+  if (/RA/.test(w)) return [61, 'Rain'];
+  if (/DZ/.test(w)) return [51, 'Drizzle'];
+  if (/FG/.test(w)) return [45, 'Fog'];
+  if (/DU|SA|DS|SS/.test(w)) return [45, 'Dust'];
+  if (/HZ|FU/.test(w)) return [45, 'Haze'];
+  if (/BR/.test(w)) return [45, 'Mist'];
+  const order = ['CLR', 'SKC', 'NSC', 'NCD', 'CAVOK', 'FEW', 'SCT', 'BKN', 'OVC', 'OVX'];
+  const cover = (clouds ?? [])
+    .map(c => c.cover)
+    .sort((a, b) => order.indexOf(b) - order.indexOf(a))[0];
+  if (cover === 'OVC' || cover === 'OVX') return [3, 'Overcast'];
+  if (cover === 'BKN') return [2, 'Mostly cloudy'];
+  if (cover === 'SCT') return [2, 'Partly cloudy'];
+  if (cover === 'FEW') return [1, 'Mostly clear'];
+  return [0, 'Clear'];
+}
+
+function parseMetar(list) {
+  const m = Array.isArray(list) ? list[0] : null;
+  if (!m || !Number.isFinite(m.temp)) throw new Error('no METAR');
+  const obsMs = (m.obsTime ?? 0) * 1000;
+  if (!obsMs || Date.now() - obsMs > 3 * 3600 * 1000) throw new Error('METAR too old');
+  const rh = Number.isFinite(m.dewp) ? humidityFrom(m.temp, m.dewp) : null;
+  const [code, label] = conditionFrom(m.wxString, m.clouds);
+  return {
+    temp: m.temp,
+    feelsLike: rh != null ? feelsLike(m.temp, rh) : m.temp,
+    humidity: rh,
+    wind: Number.isFinite(m.wspd) ? m.wspd * 1.852 : null, // knots → km/h
+    code,
+    label,
+    observedAt: obsMs,
+  };
+}
+
+async function fetchObservation() {
+  return parseMetar(await getJSON('https://aviationweather.gov/api/data/metar?ids=OPKC&format=json'));
+}
+
 async function fetchAirQuality() {
   const j = await getJSON(
     'https://air-quality-api.open-meteo.com/v1/air-quality' +
@@ -97,8 +173,19 @@ async function fetchAirQuality() {
 }
 
 module.exports = async function handler(req, res) {
-  const [prayer, weather, air] = await Promise.allSettled([fetchPrayer(), fetchWeather(), fetchAirQuality()]);
+  const [prayer, weather, air, obs] = await Promise.allSettled([
+    fetchPrayer(), fetchWeather(), fetchAirQuality(), fetchObservation(),
+  ]);
   const ok = r => (r.status === 'fulfilled' ? r.value : null);
+
+  // Prefer the real airport observation for "now"; keep the model's day/night
+  // flag for the icon. Falls back to the model's current values if METAR fails.
+  const w = ok(weather);
+  if (w && ok(obs)) {
+    w.current = { ...ok(obs), isDay: w.current.isDay, source: 'observed' };
+  } else if (w) {
+    w.current.source = 'model';
+  }
 
   if (!ok(prayer) && !ok(weather)) {
     return res.status(502).json({ success: false, message: 'Karachi data is temporarily unavailable' });
@@ -110,3 +197,5 @@ module.exports = async function handler(req, res) {
     data: { prayer: ok(prayer), weather: ok(weather), air: ok(air) },
   });
 };
+
+module.exports.parseMetar = parseMetar;
