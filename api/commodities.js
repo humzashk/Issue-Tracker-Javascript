@@ -6,6 +6,13 @@
 // Spot is still fetched, but only as a plausibility yardstick for validating
 // what was scraped, and as a clearly-labelled fallback if gold.pk is down.
 //
+// Crude Oil (Brent/WTI) tries oilprice.com's homepage ticker first, with the
+// existing Yahoo Finance quote kept as both the plausibility anchor and the
+// fallback. Unlike gold — which genuinely differs from spot by local duty —
+// Brent/WTI are a single global USD price, so a scraped value more than 12%
+// off Yahoo's quote is treated as a bad parse, not a real market gap, and
+// rejected in favour of the Yahoo figure.
+//
 // Add ?debug=1 to any request to see the scrape candidates and why one won.
 
 const UA =
@@ -19,6 +26,8 @@ const GOLD_PK_URLS = [
   'https://www.gold.pk/gold-rate-in-pakistan.html',
   'https://www.gold.pk/karachi-gold-rates.html',
 ];
+
+const OILPRICE_URLS = ['https://oilprice.com/'];
 
 async function fetchWith(url, timeoutMs = 8000, accept = 'text/html') {
   const ctrl = new AbortController();
@@ -177,6 +186,59 @@ async function scrapeGoldPk(expectedGold, expectedSilver) {
   return { gold: null, silver: null, url: null, tried };
 }
 
+// oilprice.com's markup isn't known ahead of time (their ticker may also be
+// client-rendered, in which case this simply finds nothing and falls back —
+// that's the correct, honest outcome, not an error). This looks for the
+// benchmark name followed shortly after by a plausible $-style number, then
+// leans on the tight plausibility band (not a wide label search) to keep a
+// coincidental nearby number — a year, a percentage, an unrelated commodity
+// price — from ever being mistaken for the real quote.
+function extractOilBenchmark(text, labelRe, expected) {
+  // labelRe.source is wrapped in a non-capturing group: it contains its own
+  // top-level "|" (e.g. "brent\s*crude|\bbrent\b"), and without the group,
+  // regex alternation's low precedence would split the WHOLE pattern in two
+  // — "brent crude" alone would match and return, silently dropping the
+  // "must be followed by a number" requirement for that branch entirely.
+  const re = new RegExp(`(?:${labelRe.source})` + String.raw`[^]{0,120}?\$?\s*(\d{1,3}(?:\.\d{1,2})?)`, 'i');
+  const m = text.match(re);
+  if (!m) return null;
+  const value = parseFloat(m[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (!plausibleOil(value, expected)) return null;
+  return { value, context: text.slice(Math.max(0, m.index - 20), m.index + m[0].length + 20).trim() };
+}
+
+// Brent/WTI are one global USD price, not a locally-premiumed rate like
+// gold, so this band is deliberately tight — a scrape this far from Yahoo's
+// quote is a bad parse, not a real market gap.
+function plausibleOil(value, expected) {
+  if (value == null) return false;
+  if (!expected) return value > 0;
+  return value >= expected * 0.88 && value <= expected * 1.12;
+}
+
+async function scrapeOilPrice(expectedBrent, expectedWti) {
+  const tried = [];
+  for (const url of OILPRICE_URLS) {
+    try {
+      const res = await fetchWith(url);
+      const text = htmlToRows(await res.text()).join(' ').toLowerCase();
+      const brent = extractOilBenchmark(text, /brent\s*crude|\bbrent\b/, expectedBrent);
+      const wti = extractOilBenchmark(text, /wti\s*crude|\bwti\b/, expectedWti);
+      tried.push({
+        url,
+        ok: true,
+        brent: brent ? { value: brent.value, context: brent.context } : null,
+        wti: wti ? { value: wti.value, context: wti.context } : null,
+      });
+      if (brent || wti) return { brent, wti, url, tried };
+    } catch (e) {
+      tried.push({ url, ok: false, error: String(e.message).slice(0, 60) });
+    }
+  }
+  return { brent: null, wti: null, url: null, tried };
+}
+
 module.exports = async function handler(req, res) {
   const debug = req.query?.debug === '1';
 
@@ -210,6 +272,13 @@ module.exports = async function handler(req, res) {
     console.error('gold.pk scrape failed:', e.message);
   }
 
+  let scrapedOil = { brent: null, wti: null, url: null, tried: [] };
+  try {
+    scrapedOil = await scrapeOilPrice(brent, wti);
+  } catch (e) {
+    console.error('oilprice.com scrape failed:', e.message);
+  }
+
   const data = [];
 
   data.push({
@@ -239,16 +308,20 @@ module.exports = async function handler(req, res) {
       live: true, source: 'LME spot (converted)',
     });
   }
-  if (brent != null) {
+  const brentPrice = scrapedOil.brent?.value ?? brent;
+  if (brentPrice != null) {
     data.push({
       id: 'oil-brent', name: 'Crude Oil (Brent)', unit: 'per barrel',
-      price: brent, currency: 'USD', live: true, source: 'Yahoo Finance',
+      price: brentPrice, currency: 'USD', live: true,
+      source: scrapedOil.brent ? 'oilprice.com' : 'Yahoo Finance',
     });
   }
-  if (wti != null) {
+  const wtiPrice = scrapedOil.wti?.value ?? wti;
+  if (wtiPrice != null) {
     data.push({
       id: 'oil-wti', name: 'Crude Oil (WTI)', unit: 'per barrel',
-      price: wti, currency: 'USD', live: true, source: 'Yahoo Finance',
+      price: wtiPrice, currency: 'USD', live: true,
+      source: scrapedOil.wti ? 'oilprice.com' : 'Yahoo Finance',
     });
   }
 
@@ -262,7 +335,8 @@ module.exports = async function handler(req, res) {
     success: true,
     data: usable,
     goldSource: scraped.gold ? `gold.pk (${scraped.url})` : 'international spot fallback',
-    source: 'gold.pk / Yahoo Finance / ExchangeRate API',
+    oilSource: scrapedOil.brent || scrapedOil.wti ? `oilprice.com (${scrapedOil.url})` : 'Yahoo Finance fallback',
+    source: 'gold.pk / oilprice.com / Yahoo Finance / ExchangeRate API',
     ...(debug
       ? {
           debug: {
@@ -275,6 +349,13 @@ module.exports = async function handler(req, res) {
               ? { min: Math.round(expectedGold * 0.8), max: Math.round(expectedGold * 1.9) }
               : null,
             attempts: scraped.tried,
+            yahooBrent: brent,
+            yahooWti: wti,
+            oilAcceptWindow: {
+              brent: brent ? { min: +(brent * 0.88).toFixed(2), max: +(brent * 1.12).toFixed(2) } : null,
+              wti: wti ? { min: +(wti * 0.88).toFixed(2), max: +(wti * 1.12).toFixed(2) } : null,
+            },
+            oilAttempts: scrapedOil.tried,
           },
         }
       : {}),

@@ -14,6 +14,7 @@ const EXTRA = [
   { name: 'Apple Music PK most-played',     url: 'https://rss.applemarketingtools.com/api/v2/pk/music/most-played/5/songs.json', re: /"name":\s*"([^"]{2,60})"/i },
   { name: 'gold.pk (www)',                  url: 'https://www.gold.pk/', re: /([\d][\d,]{4,9})/ },
   { name: 'gold.pk (apex)',                 url: 'https://gold.pk/', re: /([\d][\d,]{4,9})/ },
+  { name: 'oilprice.com',                   url: 'https://oilprice.com/', re: /brent[^]{0,60}?(\d{1,3}\.\d{1,2})/i },
   { name: 'Deezer chart',                   url: 'https://api.deezer.com/chart/0/tracks?limit=5', re: /"title":\s*"([^"]{2,60})"/i },
 ];
 
