@@ -715,12 +715,42 @@ function fmtWait(sec) {
   return h ? `${h}h ${m}m` : m ? `${m}m ${s}s` : `${s}s`;
 }
 
-// Next prayer after "now"; after Isha it wraps to tomorrow's Fajr.
+// Mosque azan offsets. The calculated times are when each prayer's time
+// *begins*; Karachi mosques call the azan later, by their own convention
+// (e.g. Dhuhr begins ~12:26 but the azan is ~12:55). Offsets are minutes
+// after the start time, so they track the seasons instead of going stale
+// like fixed clock times would. Editable on the card, saved per browser.
+const AZAN_KEY = 'lr_azan_offsets';
+const AZAN_PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+const AZAN_DEFAULTS = { Fajr: 0, Dhuhr: 29, Asr: 0, Maghrib: 0, Isha: 0 };
+
+function loadAzanOffsets() {
+  try { return { ...AZAN_DEFAULTS, ...JSON.parse(localStorage.getItem(AZAN_KEY) || '{}') }; }
+  catch { return { ...AZAN_DEFAULTS }; }
+}
+
+let azanOffsets = loadAzanOffsets();
+let azanEditing = false;
+
+const secToHHMM = sec => {
+  const m = Math.round(((sec % 86400) + 86400) % 86400 / 60);
+  return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+};
+
+// Each timing with its mosque azan time applied (Sunrise has no azan)
+function withAzan(timings) {
+  return timings.map(t => {
+    const off = t.info ? 0 : (azanOffsets[t.name] ?? 0);
+    return { ...t, off, azan: secToHHMM(hhmmToSec(t.time) + off * 60) };
+  });
+}
+
+// Next azan after "now"; after Isha it wraps to tomorrow's Fajr.
 function nextPrayer(timings, now) {
   const prayers = timings.filter(t => !t.info);
-  const next = prayers.find(t => hhmmToSec(t.time) > now);
-  if (next) return { next, wait: hhmmToSec(next.time) - now };
-  return { next: prayers[0], wait: hhmmToSec(prayers[0].time) + 86400 - now };
+  const next = prayers.find(t => hhmmToSec(t.azan) > now);
+  if (next) return { next, wait: hhmmToSec(next.azan) - now };
+  return { next: prayers[0], wait: hhmmToSec(prayers[0].azan) + 86400 - now };
 }
 
 function renderPrayer(p) {
@@ -732,33 +762,87 @@ function renderPrayer(p) {
 }
 
 // Called every second from the clock: cheap countdown update, full redraw
-// only when the upcoming prayer changes.
+// only when the upcoming prayer or the offsets change. Paused while editing.
 function drawPrayer() {
   const p = prayerData;
-  if (!p) return;
+  if (!p || azanEditing) return;
   const now = karachiNowSec();
-  const { next, wait } = nextPrayer(p.timings, now);
+  const timings = withAzan(p.timings);
+  const { next, wait } = nextPrayer(timings, now);
+  const key = next.name + JSON.stringify(azanOffsets);
 
-  if (prayerKey === next.name && el('prayerCountdown')) {
+  if (prayerKey === key && el('prayerCountdown')) {
     el('prayerCountdown').textContent = fmtWait(wait);
     return;
   }
-  prayerKey = next.name;
+  prayerKey = key;
 
-  const rows = p.timings.map(t => {
-    const cls = t === next ? 'next' : t.info ? 'info' : hhmmToSec(t.time) <= now ? 'past' : '';
-    return `<div class="prayer-row ${cls}"><span>${esc(t.name)}</span><span>${fmt12(t.time)}</span></div>`;
+  const rows = timings.map(t => {
+    const cls = t.name === next.name && !t.info ? 'next' : t.info ? 'info' : hhmmToSec(t.azan) <= now ? 'past' : '';
+    const start = t.off ? `<span class="prayer-start">starts ${fmt12(t.time)}</span>` : '';
+    return `<div class="prayer-row ${cls}"><span>${esc(t.name)}${start}</span><span>${fmt12(t.azan)}</span></div>`;
   }).join('');
 
   setHTML('prayer-content', `
     <div class="prayer-next">
-      <div class="prayer-next-label">Next prayer</div>
+      <div class="prayer-next-label">Next azan</div>
       <div class="prayer-next-name">${esc(next.name)}</div>
-      <div class="prayer-next-time">${fmt12(next.time)} · in <span class="prayer-countdown" id="prayerCountdown">${fmtWait(wait)}</span></div>
+      <div class="prayer-next-time">${fmt12(next.azan)} · in <span class="prayer-countdown" id="prayerCountdown">${fmtWait(wait)}</span></div>
     </div>
     <div class="prayer-list">${rows}</div>
-    <div class="meta">${esc(p.method || '')}</div>
+    <div class="meta prayer-meta">
+      <span>Azan = start time + your mosque's delay · ${esc(p.method || '')}</span>
+      <button class="link-btn" id="azanEdit">Adjust to my mosque</button>
+    </div>
   `);
+  el('azanEdit').addEventListener('click', openAzanEditor);
+}
+
+function openAzanEditor() {
+  const p = prayerData;
+  azanEditing = true;
+  const rows = AZAN_PRAYERS.map(name => {
+    const t = p.timings.find(x => x.name === name);
+    return `
+      <label class="azan-row">
+        <span class="azan-name">${name}<small>starts ${fmt12(t.time)}</small></span>
+        <span class="azan-input">+<input type="number" inputmode="numeric" min="0" max="120" data-prayer="${name}" value="${azanOffsets[name] ?? 0}"> min</span>
+        <span class="azan-preview" data-preview="${name}"></span>
+      </label>`;
+  }).join('');
+
+  setHTML('prayer-content', `
+    <p class="azan-help">Set how many minutes after each prayer's start time your mosque calls the azan. Saved on this device.</p>
+    <div class="azan-form">${rows}</div>
+    <div class="azan-actions">
+      <button class="link-btn" id="azanReset">Reset</button>
+      <button class="btn-primary" id="azanSave">Save</button>
+    </div>
+  `);
+
+  const preview = () => document.querySelectorAll('[data-prayer]').forEach(inp => {
+    const t = p.timings.find(x => x.name === inp.dataset.prayer);
+    const off = Math.max(0, Math.min(120, parseInt(inp.value, 10) || 0));
+    document.querySelector(`[data-preview="${inp.dataset.prayer}"]`).textContent =
+      '→ ' + fmt12(secToHHMM(hhmmToSec(t.time) + off * 60));
+  });
+  preview();
+  el('prayer-content').addEventListener('input', preview);
+
+  el('azanReset').addEventListener('click', () => {
+    document.querySelectorAll('[data-prayer]').forEach(inp => { inp.value = AZAN_DEFAULTS[inp.dataset.prayer]; });
+    preview();
+  });
+  el('azanSave').addEventListener('click', () => {
+    document.querySelectorAll('[data-prayer]').forEach(inp => {
+      azanOffsets[inp.dataset.prayer] = Math.max(0, Math.min(120, parseInt(inp.value, 10) || 0));
+    });
+    try { localStorage.setItem(AZAN_KEY, JSON.stringify(azanOffsets)); } catch {}
+    azanEditing = false;
+    prayerKey = null;
+    drawPrayer();
+    toast('🕌', 'Azan times saved', 'Matched to your mosque');
+  });
 }
 
 // ── Karachi: weather + air quality ────────────────────────────────────────────
