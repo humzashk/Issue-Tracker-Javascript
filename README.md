@@ -1,63 +1,40 @@
-# LiveRates Dashboard
+# LiveRates
 
-A live data dashboard built for [Vercel](https://vercel.com) deployment. Displays real-time crypto rates, commodity prices, sports scores, and trending entertainment — all in a dark-theme responsive UI that auto-refreshes every 5 minutes.
+Pakistan-focused live dashboard — markets, daily rates, Karachi essentials and trending music — installable as an app (PWA). Live at **https://issue-tracker-javascript.vercel.app**.
 
-## Features
+## Sections
 
-| Section | Data Source |
-|---|---|
-| Crypto Rates in PKR + USD (BTC, ETH, XRP, USDT) with 7-day sparklines | CoinGecko |
-| Gold & Silver per tola (PKR), Copper, Brent & WTI Oil | gold.pk / Yahoo Finance |
-| USD ⇄ PKR Converter + currency rates (EUR, GBP, SAR, AED, CNY, TRY) | open.er-api.com |
-| Crypto Fear & Greed gauge | alternative.me |
-| Pakistan Daily Rates (fuel, energy, meat, grocery, produce) with graphs & 30-day forecast | live fuel scrape + reference data |
-| Top 10 Trending Movies (IMDb + Metascore) | IMDb Most Popular / OMDb |
-| Global Top 10 Songs · Pakistan Trending · Reels Viral Audio (with 30s previews) | Spotify/YouTube daily charts, Apple, Deezer — all keyless |
+| Tab | Cards | Sources |
+|---|---|---|
+| **Markets** | Crypto (PKR + USD, 7-day sparklines) · Market Mood · Gold, Silver & Oil · PSX KSE-100 · Predict BTC game | CoinGecko · alternative.me · gold.pk, oilprice.com, Yahoo Finance · PSX Data Portal |
+| **Pakistan** | Currency converter + rates · Daily Rates (fuel, meat, grocery, produce) with charts & 30-day forecast | open.er-api.com · live fuel scrape + `data/pak-commodities.json` |
+| **Karachi** | Prayer times (next-prayer countdown, Hijri date) · 7-day weather + air quality | Aladhan (Univ. of Islamic Sciences, Karachi · Hanafi) · Open-Meteo |
+| **Entertainment** | Top movies · Global Top 10 · Pakistan trending (30s previews) | IMDb/OMDb · Spotify/YouTube daily charts, Apple, Deezer |
 
-Plus: BTC prediction game with XP/levels/achievements, global search, ticker tape, zen mode, 4 themes, and a few hidden easter eggs. 🎮
+Also: search across everything, themes, zen mode, XP/achievements, and a few easter eggs. Keys: `1`–`4` sections, `R` refresh, `T` theme, `Z` zen.
 
-No API keys are required — every data source is free and publicly accessible. `OMDB_API_KEY` is optional and only adds IMDb/Metascore ratings to the movies card.
+## Stack
 
-Visit `/api/probe` on a deployment to see which upstream sources are reachable from it.
-
-## Tech Stack
-
-- **Frontend**: Vanilla HTML/CSS/JS — no build step
-- **Backend**: Vercel Serverless Functions (Node.js ≥ 18)
-- **Deployment**: Vercel
-
-## Project Structure
+Vanilla HTML/CSS/JS (no build step) + Vercel serverless functions in `/api` (Node ≥ 18).
 
 ```
-/
-├── index.html          # Dashboard UI
-├── css/styles.css      # Dark theme, responsive CSS Grid
-├── js/app.js           # Fetch + render logic, auto-refresh
-├── api/
-│   ├── crypto.js       # CoinGecko proxy
-│   ├── commodities.js  # Yahoo Finance proxy
-│   ├── cricket.js      # TheSportsDB
-│   ├── football.js     # TheSportsDB
-│   ├── movies.js       # iTunes RSS
-│   └── music.js        # iTunes RSS
-└── package.json
+index.html            page shell (4 tabbed panels)
+css/styles.css        design system + themes
+js/app.js             rendering, tabs, search, game, eggs
+sw.js                 service worker (offline + installable)
+manifest.webmanifest  PWA manifest · icons/ app icons
+api/                  one file per endpoint; _*.js are shared helpers, not endpoints
+data/                 reference rates for the Daily Rates card
 ```
 
-## Deploy to Vercel
+Vercel's free plan allows 12 functions; this uses 10.
 
-1. Go to [vercel.com/new](https://vercel.com/new)
-2. Import this repository
-3. Leave all settings as default
-4. Click **Deploy**
+## Setup
 
-Vercel auto-detects the `/api` serverless functions — no configuration needed.
+Import the repo at [vercel.com/new](https://vercel.com/new) and deploy — no configuration needed.
 
-## Adding Premium Data Sources
+Optional:
+- `OMDB_API_KEY` env var — adds IMDb rating + Metascore to movies.
+- **Analytics**: Vercel dashboard → project → **Analytics** → Enable (free). The script is already in the page.
 
-To upgrade any section with a dedicated API, add the key in **Vercel → Project Settings → Environment Variables** and update the corresponding file in `/api/`:
-
-| Variable | Used for |
-|---|---|
-| `TMDB_API_KEY` | Replace iTunes movies with TMDB trending |
-| `CRICKET_API_KEY` | Replace TheSportsDB with a dedicated cricket API |
-| `FOOTBALL_API_KEY` | Replace TheSportsDB with football-data.org |
+Most endpoints accept `?debug=1` to show which upstream source answered.

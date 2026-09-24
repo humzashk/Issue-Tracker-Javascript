@@ -83,4 +83,4 @@ async function getLiveFuel() {
   return { petrol: null, diesel: null, source: null, results };
 }
 
-module.exports = { SOURCES, fetchSource, getLiveFuel };
+module.exports = { getLiveFuel };

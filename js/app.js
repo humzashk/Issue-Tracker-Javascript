@@ -58,7 +58,7 @@ function setHTML(id, html) {
 }
 
 function showLoading(id) {
-  setHTML(id, '<div class="loading-state"><div class="spinner"></div></div>');
+  setHTML(id, '<div class="skeleton"><span></span><span></span><span></span></div>');
 }
 
 function showError(id, msg) {
@@ -257,7 +257,7 @@ function renderCrypto(data) {
     <div class="crypto-item">
       <div class="crypto-top">
         <div class="crypto-info">
-          <img class="crypto-img" src="${safeUrl(c.image)}" alt="${esc(c.name)}" width="26" height="26" loading="lazy">
+          <img class="crypto-img" src="${safeUrl(c.image)}" alt="" width="30" height="30" loading="lazy">
           <div>
             <div class="crypto-symbol">${esc(c.symbol)}</div>
             <div class="crypto-name">${esc(c.name)}</div>
@@ -332,18 +332,17 @@ function renderCommodities(data) {
     const pct = delta != null && prev ? (delta / prev) * 100 : null;
     if (delta != null) anyDelta = true;
     return `
-    <div class="commodity-item">
-      <div class="commodity-name-group">
-        <span class="commodity-icon">${icons[c.id] || '📊'}</span>
+    <div class="row">
+      <div class="row-main">
+        <span class="row-icon">${icons[c.id] || '📊'}</span>
         <div>
-          <div class="commodity-label">${esc(c.name)}</div>
-          <div class="commodity-sub">${esc(c.unit)}${c.source ? ` · ${esc(c.source)}` : ''}</div>
+          <div class="row-label">${esc(c.name)}</div>
+          <div class="row-sub">${esc(c.unit)}${c.source ? ` · ${esc(c.source)}` : ''}</div>
         </div>
       </div>
-      <div class="commodity-price-group">
-        <div class="commodity-price">${c.currency === 'PKR' ? fmtPKR(c.price) : fmtPrice(c.price, 2)}</div>
-        <div class="commodity-unit">${c.currency || 'USD'}</div>
-        ${delta != null ? `<div class="commodity-change">${fmtDeltaBadge(delta, { pct })}</div>` : ''}
+      <div class="row-value">
+        <div class="row-price">${c.currency === 'PKR' ? fmtPKR(c.price) : fmtPrice(c.price, 2)}</div>
+        ${delta != null ? `<div class="row-change">${fmtDeltaBadge(delta, { pct })}</div>` : ''}
       </div>
     </div>
   `;
@@ -351,14 +350,11 @@ function renderCommodities(data) {
 
   const goldLive = data.find(c => c.id === 'gold')?.live;
   const note = goldLive
-    ? '<span class="badge-live">● Live</span> Gold &amp; silver from gold.pk local market'
-    : '<span class="badge-indicative">◆ Fallback</span> gold.pk unreachable — showing international spot converted to PKR';
+    ? '<span class="badge-live">●</span>Gold &amp; silver: gold.pk local market (per tola, PKR)'
+    : '<span class="badge-indicative">◆</span>gold.pk unreachable — gold &amp; silver from international spot, converted';
+  const deltaNote = anyDelta ? ' · ▲▼ vs the last day this browser saw' : '';
 
-  const deltaNote = anyDelta
-    ? ' · ▲▼ shows change since this browser last saw a new day\'s price'
-    : '';
-
-  setHTML('commodities-content', `<div class="commodity-list">${items}</div><div class="rate-meta">${note}${deltaNote}</div>`);
+  setHTML('commodities-content', `<div class="list">${items}</div><div class="meta">${note}${deltaNote}</div>`);
 }
 
 function renderMood(data) {
@@ -402,18 +398,44 @@ function renderRanked(id, data) {
   setHTML(id, `<div class="ranked-list">${items}</div>`);
 }
 
-function renderConverter(data) {
-  if (!data?.usdToPkr) { showError('converter-content', 'Rate unavailable'); return; }
+// Converter sits on top of the currency list. On a background refresh the
+// inputs are left alone (so a half-typed amount isn't wiped) — only the rate
+// and the computed side are updated.
+function renderCurrency(data) {
+  if (!data?.usdToPkr) { showError('currency-content', 'Rates unavailable'); return; }
   state.forex = data;
-  setHTML('converter-content', `
-    <div class="conv-wrap">
-      <div class="conv-rate">1 USD = <strong>${data.usdToPkr.toFixed(2)} PKR</strong></div>
-      <div class="conv-row"><label>USD</label><input class="conv-input" id="convUsd" type="number" inputmode="decimal" placeholder="1.00"></div>
-      <button class="conv-swap" id="convSwap" title="Swap values">⇅</button>
-      <div class="conv-row"><label>PKR</label><input class="conv-input" id="convPkr" type="number" inputmode="decimal" placeholder="${data.usdToPkr.toFixed(2)}"></div>
-      ${data.updated ? `<div class="conv-updated">Rate updated: ${data.updated}</div>` : ''}
+
+  const rows = (data.currencies ?? []).map(c => `
+    <div class="row">
+      <div class="row-main">
+        <span class="row-icon">${c.flag || '💱'}</span>
+        <div>
+          <div class="row-label">${esc(c.code)}</div>
+          <div class="row-sub">${esc(c.name)}</div>
+        </div>
+      </div>
+      <div class="row-value"><div class="row-price">${fmtPKR(c.pkr)}</div></div>
+    </div>`).join('');
+
+  const rateLine = `1 USD = <strong>${data.usdToPkr.toFixed(2)} PKR</strong>`;
+
+  if (el('convUsd')) {
+    el('convRate').innerHTML = rateLine;
+    el('currencyList').innerHTML = rows;
+    el('convUsd').dispatchEvent(new Event('input'));
+    return;
+  }
+
+  setHTML('currency-content', `
+    <div class="conv">
+      <div class="conv-field"><label for="convUsd">USD</label><input class="conv-input" id="convUsd" type="number" inputmode="decimal" value="1"></div>
+      <button class="conv-swap" id="convSwap" title="Swap" aria-label="Swap">⇄</button>
+      <div class="conv-field"><label for="convPkr">PKR</label><input class="conv-input" id="convPkr" type="number" inputmode="decimal"></div>
     </div>
+    <div class="conv-rate" id="convRate">${rateLine}</div>
+    <div class="list" id="currencyList">${rows}</div>
   `);
+
   const usd = el('convUsd'), pkr = el('convPkr');
   usd.addEventListener('input', () => {
     const v = parseFloat(usd.value);
@@ -429,6 +451,7 @@ function renderConverter(data) {
     pkr.value = a;
     usd.dispatchEvent(new Event('input'));
   });
+  usd.dispatchEvent(new Event('input'));
 }
 
 // ── Audio previews (30s) ─────────────────────────────────────────────────────
@@ -455,31 +478,6 @@ function togglePreview(btn) {
   btn.textContent = '⏸';
   btn.classList.add('playing');
   playingBtn = btn;
-}
-
-// ── Currencies renderer ──────────────────────────────────────────
-
-function renderCurrencies(data) {
-  const list = data?.currencies;
-  if (!list?.length) { showError('currencies-content', 'No rates available'); return; }
-
-  const rows = list.map(c => `
-    <div class="commodity-item">
-      <div class="commodity-name-group">
-        <span class="commodity-icon">${c.flag || '💱'}</span>
-        <div>
-          <div class="commodity-label">${esc(c.code)}</div>
-          <div class="commodity-sub">${esc(c.name)}</div>
-        </div>
-      </div>
-      <div class="commodity-price-group">
-        <div class="commodity-price">${fmtPKR(c.pkr)}</div>
-        <div class="commodity-unit">per ${esc(c.code)}</div>
-      </div>
-    </div>
-  `).join('');
-
-  setHTML('currencies-content', `<div class="commodity-list">${rows}</div>`);
 }
 
 // ── Pakistan daily commodities (with graphs + forecast) ─────────────────────
@@ -514,31 +512,30 @@ function renderPakCom(data) {
   pakcomData = data;
 
   const sections = data.sections.map((sec, si) => `
-    <div class="rate-section-title">${SECTION_ICONS[sec.title] || '📦'} ${esc(sec.title)}</div>
+    <div class="section-title">${SECTION_ICONS[sec.title] || '📦'} ${esc(sec.title)}</div>
     <div class="pakcom-grid">
       ${(sec.items ?? []).map((i, ii) => {
         const hist = i.history ?? [];
         const prev = hist.length > 1 ? hist[hist.length - 2][1] : null;
         const delta = prev != null ? i.rate - prev : null;
         return `
-        <div class="pakcom-item" data-si="${si}" data-ii="${ii}" title="Tap for graph & forecast">
+        <button class="pakcom-item" data-si="${si}" data-ii="${ii}" title="Chart & 30-day forecast">
           <div class="pakcom-name">${esc(i.name)}</div>
           <div class="pakcom-rate">${fmtPKR(i.rate)}</div>
           <div class="pakcom-foot">
             <span class="pakcom-unit">${esc(i.unit || '')}</span>
             ${fmtDeltaBadge(delta, { invert: true })}
           </div>
-          <span class="pakcom-chart-hint">📈</span>
-        </div>`;
+        </button>`;
       }).join('')}
     </div>
   `).join('');
 
   setHTML('pakcom-content', `
     ${sections}
-    <div class="rate-meta">
-      ${data.liveFuel ? '<span class="badge-live">● Live fuel</span>' : '<span class="badge-indicative">◆ Reference</span>'}
-      Updated ${esc(data.updated || '—')} · ${esc(data.source || '')} · Tap any item for graph &amp; 30-day forecast
+    <div class="meta">
+      ${data.liveFuel ? '<span class="badge-live">●</span>Petrol &amp; diesel live' : '<span class="badge-indicative">◆</span>Fuel sources unreachable'}
+      · other items are reference rates (updated ${esc(data.updated || '—')})
     </div>
   `);
 }
@@ -653,6 +650,191 @@ function openChart(si, ii) {
 }
 
 function closeChart() { el('chartModal').hidden = true; }
+
+// ── PSX KSE-100 ───────────────────────────────────────────────────────────────
+
+function fmtWhen(ms) {
+  return new Date(ms).toLocaleString('en-US', {
+    timeZone: 'Asia/Karachi', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+  });
+}
+
+function renderPSX(d) {
+  if (!d?.value) { showError('psx-content', 'KSE-100 unavailable'); return; }
+  const fmtIdx = n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const up = d.change == null || d.change >= 0;
+  const spark = d.series?.length > 1
+    ? sparklineSVG(d.series, up).replace('class="sparkline"', 'class="sparkline psx-spark"')
+    : '';
+
+  setHTML('psx-content', `
+    <div class="psx-value">${fmtIdx(d.value)}</div>
+    ${d.change != null ? `<div class="psx-change">${fmtDeltaBadge(d.change, { pct: d.changePct })} today</div>` : ''}
+    ${d.live
+      ? '<div class="psx-status live"><span class="status-dot"></span>Market live</div>'
+      : `<div class="psx-status">Market closed${d.asOf ? ` · as of ${esc(fmtWhen(d.asOf))}` : ''}</div>`}
+    ${d.high != null && d.low != null
+      ? `<div class="psx-range"><span><b>High</b>${fmtIdx(d.high)}</span><span><b>Low</b>${fmtIdx(d.low)}</span></div>`
+      : ''}
+    ${spark}
+    <div class="meta">${esc(d.source || '')} · 30-day trend</div>
+  `);
+}
+
+function indexPSX(d) {
+  searchIndex.psx = d?.value ? [{
+    type: 'psx', emoji: '🏛️', img: null,
+    name: 'KSE-100 Index', sub: 'Pakistan Stock Exchange',
+    value: d.value.toLocaleString('en-US', { maximumFractionDigits: 0 }),
+    change: d.changePct,
+    keys: 'psx kse 100 kse100 stock exchange shares index',
+  }] : [];
+}
+
+// ── Karachi: prayer times ─────────────────────────────────────────────────────
+
+let prayerData = null;
+let prayerKey = null;
+
+function karachiNowSec() {
+  const [h, m, sec] = new Date()
+    .toLocaleTimeString('en-GB', { timeZone: 'Asia/Karachi', hour12: false })
+    .split(':').map(Number);
+  return (h % 24) * 3600 + m * 60 + sec;
+}
+
+const hhmmToSec = t => { const [h, m] = t.split(':').map(Number); return h * 3600 + m * 60; };
+
+function fmt12(t) {
+  const [h, m] = t.split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+
+function fmtWait(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s}s` : `${s}s`;
+}
+
+// Next prayer after "now"; after Isha it wraps to tomorrow's Fajr.
+function nextPrayer(timings, now) {
+  const prayers = timings.filter(t => !t.info);
+  const next = prayers.find(t => hhmmToSec(t.time) > now);
+  if (next) return { next, wait: hhmmToSec(next.time) - now };
+  return { next: prayers[0], wait: hhmmToSec(prayers[0].time) + 86400 - now };
+}
+
+function renderPrayer(p) {
+  if (!p?.timings?.length) { showError('prayer-content', 'Prayer times unavailable right now'); return; }
+  prayerData = p;
+  prayerKey = null;
+  el('hijriDate').textContent = p.hijri ?? '';
+  drawPrayer();
+}
+
+// Called every second from the clock: cheap countdown update, full redraw
+// only when the upcoming prayer changes.
+function drawPrayer() {
+  const p = prayerData;
+  if (!p) return;
+  const now = karachiNowSec();
+  const { next, wait } = nextPrayer(p.timings, now);
+
+  if (prayerKey === next.name && el('prayerCountdown')) {
+    el('prayerCountdown').textContent = fmtWait(wait);
+    return;
+  }
+  prayerKey = next.name;
+
+  const rows = p.timings.map(t => {
+    const cls = t === next ? 'next' : t.info ? 'info' : hhmmToSec(t.time) <= now ? 'past' : '';
+    return `<div class="prayer-row ${cls}"><span>${esc(t.name)}</span><span>${fmt12(t.time)}</span></div>`;
+  }).join('');
+
+  setHTML('prayer-content', `
+    <div class="prayer-next">
+      <div class="prayer-next-label">Next prayer</div>
+      <div class="prayer-next-name">${esc(next.name)}</div>
+      <div class="prayer-next-time">${fmt12(next.time)} · in <span class="prayer-countdown" id="prayerCountdown">${fmtWait(wait)}</span></div>
+    </div>
+    <div class="prayer-list">${rows}</div>
+    <div class="meta">${esc(p.method || '')}</div>
+  `);
+}
+
+// ── Karachi: weather + air quality ────────────────────────────────────────────
+
+// WMO weather codes (Open-Meteo)
+function wxInfo(code, isDay = true) {
+  if (code === 0) return [isDay ? '☀️' : '🌙', 'Clear'];
+  if (code === 1) return [isDay ? '🌤️' : '🌙', 'Mainly clear'];
+  if (code === 2) return ['⛅', 'Partly cloudy'];
+  if (code === 3) return ['☁️', 'Overcast'];
+  if (code === 45 || code === 48) return ['🌫️', 'Fog / haze'];
+  if (code >= 51 && code <= 57) return ['🌦️', 'Drizzle'];
+  if (code >= 61 && code <= 67) return ['🌧️', 'Rain'];
+  if (code >= 71 && code <= 77) return ['❄️', 'Snow'];
+  if (code >= 80 && code <= 82) return ['🌦️', 'Showers'];
+  if (code >= 85 && code <= 86) return ['🌨️', 'Snow showers'];
+  if (code >= 95) return ['⛈️', 'Thunderstorm'];
+  return ['🌡️', '—'];
+}
+
+function aqiInfo(aqi) {
+  if (aqi <= 50) return ['Good', 'var(--green)'];
+  if (aqi <= 100) return ['Moderate', 'var(--yellow)'];
+  if (aqi <= 150) return ['Unhealthy for sensitive groups', '#fb923c'];
+  if (aqi <= 200) return ['Unhealthy', 'var(--red)'];
+  if (aqi <= 300) return ['Very unhealthy', '#a855f7'];
+  return ['Hazardous', '#9f1239'];
+}
+
+function renderWeather(w, air) {
+  if (!w?.current) { showError('weather-content', 'Weather unavailable right now'); return; }
+  const c = w.current;
+  const [icon, label] = wxInfo(c.code, c.isDay);
+  const r = n => Math.round(n);
+
+  let aqiChip = '';
+  if (air?.aqi != null) {
+    const [aqiLabel, color] = aqiInfo(air.aqi);
+    aqiChip = `<span class="chip">AQI <b style="color:${color}">${air.aqi}</b> ${esc(aqiLabel)}</span>`;
+  }
+
+  const days = w.days.map((d, i) => {
+    const name = i === 0 ? 'Today'
+      : new Date(d.date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+    return `
+      <div class="wx-day${i === 0 ? ' today' : ''}">
+        <span class="wx-day-name">${name}</span>
+        <span class="wx-day-icon" title="${esc(wxInfo(d.code)[1])}">${wxInfo(d.code)[0]}</span>
+        <span class="wx-day-max">${r(d.max)}°</span>
+        <span class="wx-day-min">${r(d.min)}°</span>
+        <span class="wx-day-rain">${d.rain >= 10 ? `💧${d.rain}%` : ''}</span>
+      </div>`;
+  }).join('');
+
+  setHTML('weather-content', `
+    <div class="wx">
+      <div>
+        <div class="wx-now">
+          <span class="wx-now-icon">${icon}</span>
+          <div>
+            <div class="wx-temp">${r(c.temp)}°</div>
+            <div class="wx-desc">${esc(label)} · feels ${r(c.feelsLike)}°</div>
+          </div>
+        </div>
+        <div class="wx-facts">
+          <span class="chip">💧 <b>${r(c.humidity)}%</b></span>
+          <span class="chip">💨 <b>${r(c.wind)}</b> km/h</span>
+          ${w.days[0]?.uv != null ? `<span class="chip">UV <b>${r(w.days[0].uv)}</b></span>` : ''}
+          ${aqiChip}
+        </div>
+      </div>
+      <div class="wx-days">${days}</div>
+    </div>
+    <div class="meta">Open-Meteo forecast for Karachi</div>
+  `);
+}
 
 // ── Ticker tape ───────────────────────────────────────────────────────────────
 
@@ -834,7 +1016,39 @@ async function resolveRound() {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
-const searchIndex = { crypto: [], commodities: [], movies: [], music: [], musicpk: [] };
+// type → [tab, card] so a result can open the right section
+const SEARCH_TARGETS = {
+  crypto: ['markets', 'card-crypto'],
+  commodity: ['markets', 'card-commodities'],
+  psx: ['markets', 'card-psx'],
+  currency: ['pakistan', 'card-currency'],
+  pakcom: ['pakistan', 'card-pakcom'],
+  movies: ['entertainment', 'card-movies'],
+  music: ['entertainment', 'card-music'],
+  musicpk: ['entertainment', 'card-musicpk'],
+};
+
+const searchIndex = { crypto: [], commodities: [], psx: [], currency: [], pakcom: [], movies: [], music: [], musicpk: [] };
+
+function indexCurrency(data) {
+  searchIndex.currency = (data?.currencies ?? []).map(c => ({
+    type: 'currency', emoji: c.flag || '💱', img: null,
+    name: `${c.code} — ${c.name}`,
+    sub: 'per 1 ' + c.code,
+    value: fmtPKR(c.pkr),
+    keys: [c.code, c.name, 'dollar', 'rate'].join(' ').toLowerCase(),
+  }));
+}
+
+function indexPakCom(data) {
+  searchIndex.pakcom = (data?.sections ?? []).flatMap(sec => (sec.items ?? []).map(i => ({
+    type: 'pakcom', emoji: SECTION_ICONS[sec.title] || '📦', img: null,
+    name: i.name,
+    sub: i.unit,
+    value: fmtPKR(i.rate),
+    keys: [i.name, sec.title].join(' ').toLowerCase(),
+  })));
+}
 
 function indexCrypto(data) {
   searchIndex.crypto = (data ?? []).map(c => ({
@@ -882,13 +1096,7 @@ function runSearch(q) {
   if (!raw) { box.hidden = true; return; }
   if (raw === 'pakistan') pakistanSurprise();
 
-  const all = [
-    ...searchIndex.crypto,
-    ...searchIndex.commodities,
-    ...searchIndex.movies,
-    ...searchIndex.music,
-    ...searchIndex.musicpk,
-  ];
+  const all = Object.values(searchIndex).flat();
 
   const hits = all.filter(item => item.keys.includes(raw) || item.keys.split(' ').some(w => w.startsWith(raw)));
   const hits2 = hits.length ? hits : all.filter(item => item.keys.includes(raw.slice(0, 3)));
@@ -903,7 +1111,7 @@ function runSearch(q) {
   const pct = v => v != null ? `<span class="${v > 0 ? 'positive' : v < 0 ? 'negative' : 'neutral'}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>` : '';
 
   box.innerHTML = results.map(r => `
-    <div class="search-result-item" data-scroll="${r.type}-card">
+    <div class="search-result-item" data-type="${r.type}">
       ${safeUrl(r.img) ? `<img class="sri-thumb" src="${safeUrl(r.img)}" alt="">` : `<span class="sri-emoji">${r.emoji}</span>`}
       <div class="sri-info">
         <div class="sri-name">${highlight(esc(r.name), q.trim())}</div>
@@ -940,15 +1148,17 @@ function initSearch() {
   });
 
   document.addEventListener('click', e => {
-    if (!e.target.closest('.search-bar-wrap')) box.hidden = true;
+    if (!e.target.closest('#search')) box.hidden = true;
   });
 
   box.addEventListener('click', e => {
-    const item = e.target.closest('[data-scroll]');
+    const item = e.target.closest('[data-type]');
     if (!item) return;
-    const type = item.dataset.scroll;
-    const card = document.querySelector(`[id*="${type.split('-')[0]}"]`);
-    if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    const [tab, cardId] = SEARCH_TARGETS[item.dataset.type] ?? [];
+    if (tab) {
+      switchTab(tab);
+      requestAnimationFrame(() => el(cardId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    }
     box.hidden = true;
     input.value = '';
     clearBtn.classList.remove('visible');
@@ -1084,35 +1294,21 @@ function cycleTheme() {
   toast('🎨', 'Theme changed', next.charAt(0).toUpperCase() + next.slice(1));
 }
 
-// ── 3D card tilt + cursor glow ────────────────────────────────────────────────
+// ── Modules & tabs ────────────────────────────────────────────────────────────
 
-function initTilt() {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  if (matchMedia('(pointer: coarse)').matches) return;
+const TABS = { markets: 'Markets', pakistan: 'Pakistan', karachi: 'Karachi', entertainment: 'Entertainment' };
+const TAB_KEY = 'lr_tab';
+const MODULE_TTL = 5 * 60 * 1000;
+let activeTab = 'markets';
+let lastUpdated = null;
 
-  document.querySelectorAll('.card').forEach(card => {
-    card.addEventListener('mousemove', e => {
-      const r = card.getBoundingClientRect();
-      const px = (e.clientX - r.left) / r.width;
-      const py = (e.clientY - r.top) / r.height;
-      card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
-      card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
-      const rx = (0.5 - py) * 4;
-      const ry = (px - 0.5) * 4;
-      card.style.transform = `perspective(900px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
-    });
-    card.addEventListener('mouseleave', () => {
-      card.style.transform = '';
-    });
-  });
-}
-
-// ── Modules ───────────────────────────────────────────────────────────────────
-
+// Each module belongs to a tab and only loads when that tab is shown (then
+// quietly in the background, so search can find everything). Once a card
+// has data, refreshes swap it in place — no skeleton flash, and a failed
+// refresh keeps the last good data instead of replacing it with an error.
 const MODULES = [
   {
-    name: 'crypto',
-    endpoint: '/api/crypto',
+    name: 'crypto', tab: 'markets', endpoint: '/api/crypto', targets: ['crypto-content'],
     render: data => {
       state.crypto = data;
       renderCrypto(data);
@@ -1121,78 +1317,132 @@ const MODULES = [
       if (!game.active) renderGameIdle();
     },
   },
+  { name: 'mood', tab: 'markets', endpoint: '/api/mood', targets: ['mood-content'], render: renderMood },
   {
-    name: 'mood',
-    endpoint: '/api/mood',
-    render: data => renderMood(data),
-  },
-  {
-    name: 'commodities',
-    endpoint: '/api/commodities',
+    name: 'commodities', tab: 'markets', endpoint: '/api/commodities', targets: ['commodities-content'],
     render: data => { state.commodities = data; renderCommodities(data); rebuildTicker(); indexCommodities(data); },
   },
+  { name: 'psx', tab: 'markets', endpoint: '/api/psx', targets: ['psx-content'], render: d => { renderPSX(d); indexPSX(d); } },
+  { name: 'currency', tab: 'pakistan', endpoint: '/api/forex', targets: ['currency-content'], render: d => { renderCurrency(d); indexCurrency(d); } },
+  { name: 'pakcom', tab: 'pakistan', endpoint: '/api/pakcom', targets: ['pakcom-content'], render: d => { renderPakCom(d); indexPakCom(d); } },
   {
-    name: 'converter',
-    endpoint: '/api/forex',
-    render: data => renderConverter(data),
+    name: 'karachi', tab: 'karachi', endpoint: '/api/karachi', targets: ['prayer-content', 'weather-content'],
+    render: d => { renderPrayer(d.prayer); renderWeather(d.weather, d.air); },
   },
-  {
-    name: 'movies',
-    endpoint: '/api/movies',
-    render: data => { renderRanked('movies-content', data); indexRanked('movies', data); },
-  },
-  {
-    name: 'music',
-    endpoint: '/api/music',
-    render: data => { renderRanked('music-content', data); indexRanked('music', data); },
-  },
-  {
-    name: 'musicpk',
-    endpoint: '/api/music-pk',
-    render: data => { renderRanked('musicpk-content', data); indexRanked('musicpk', data); },
-  },
-  {
-    name: 'currencies',
-    endpoint: '/api/forex',
-    render: data => renderCurrencies(data),
-  },
-  {
-    name: 'pakcom',
-    endpoint: '/api/pakcom',
-    render: data => renderPakCom(data),
-  },
+  { name: 'movies', tab: 'entertainment', endpoint: '/api/movies', targets: ['movies-content'], render: d => { renderRanked('movies-content', d); indexRanked('movies', d); } },
+  { name: 'music', tab: 'entertainment', endpoint: '/api/music', targets: ['music-content'], render: d => { renderRanked('music-content', d); indexRanked('music', d); } },
+  { name: 'musicpk', tab: 'entertainment', endpoint: '/api/music-pk', targets: ['musicpk-content'], render: d => { renderRanked('musicpk-content', d); indexRanked('musicpk', d); } },
 ];
 
-async function loadModule(mod) {
-  const id = `${mod.name}-content`;
-  showLoading(id);
+async function loadModule(mod, force = false) {
+  if (mod.loading) return;
+  if (!force && mod.loadedAt && Date.now() - mod.loadedAt < MODULE_TTL) return;
+  mod.loading = true;
+  if (!mod.loadedAt) mod.targets.forEach(showLoading);
   try {
-    const data = await apiFetch(mod.endpoint);
-    mod.render(data);
+    mod.render(await apiFetch(mod.endpoint));
+    mod.loadedAt = Date.now();
+    lastUpdated = Date.now();
+    updateStamp();
   } catch (err) {
     console.error(`[${mod.name}]`, err);
-    showError(id, err.message);
+    if (!mod.loadedAt) mod.targets.forEach(id => showError(id, err.message));
+  } finally {
+    mod.loading = false;
   }
 }
 
-async function loadAll() {
+function loadTab(tab, force = false) {
+  return Promise.allSettled(MODULES.filter(m => m.tab === tab).map(m => loadModule(m, force)));
+}
+
+async function refreshNow() {
   const btn = el('refreshAll');
-  if (btn) btn.classList.add('spinning');
-  await Promise.allSettled(MODULES.map(loadModule));
-  if (btn) btn.classList.remove('spinning');
+  btn?.classList.add('spinning');
+  await loadTab(activeTab, true);
+  btn?.classList.remove('spinning');
   awardXP(1);
+}
+
+function switchTab(tab, { scroll = false } = {}) {
+  if (!TABS[tab]) tab = 'markets';
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(b => {
+    const on = b.dataset.tab === tab;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  document.querySelectorAll('.panel').forEach(p => { p.hidden = p.dataset.panel !== tab; });
+  el('pageTitle').textContent = TABS[tab];
+  document.title = `${TABS[tab]} · LiveRates`;
+  try { localStorage.setItem(TAB_KEY, tab); } catch {}
+  if (location.hash !== '#' + tab) history.replaceState(null, '', '#' + tab);
+  if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+  loadTab(tab);
+}
+
+function initialTab() {
+  const fromHash = location.hash.slice(1);
+  if (TABS[fromHash]) return fromHash;
+  try { const saved = localStorage.getItem(TAB_KEY); if (TABS[saved]) return saved; } catch {}
+  return 'markets';
+}
+
+function updateStamp() {
+  if (!lastUpdated) return;
+  el('updatedAt').textContent = 'Updated ' + new Date(lastUpdated).toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Karachi', hour: 'numeric', minute: '2-digit',
+  });
+  el('updatedSep').hidden = false;
+}
+
+function updateNetStatus() {
+  const online = navigator.onLine;
+  el('netStatus').classList.toggle('offline', !online);
+  el('netLabel').textContent = online ? 'Live' : 'Offline · showing saved data';
 }
 
 // ── Clock ─────────────────────────────────────────────────────────────────────
 
 function tickClock() {
-  const t = new Date().toLocaleTimeString('en-PK', {
-    timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  const t = new Date().toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Karachi', hour: 'numeric', minute: '2-digit', second: '2-digit',
   });
-  const clock = el('pkClock');
-  if (clock) clock.textContent = t + ' PKT';
-  const zc = el('zenClock');
-  if (zc && !el('zenOverlay').hidden) zc.textContent = t;
+  el('pkClock').textContent = t + ' PKT';
+  if (!el('zenOverlay').hidden) el('zenClock').textContent = t;
+  drawPrayer();
+}
+
+// ── PWA: service worker + install button ──────────────────────────────────────
+
+function initPWA() {
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  }
+
+  let installEvt = null;
+  const btn = el('installBtn');
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installEvt = e;
+    btn.hidden = false;
+  });
+  btn.addEventListener('click', async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    await installEvt.userChoice;
+    installEvt = null;
+    btn.hidden = true;
+  });
+  window.addEventListener('appinstalled', () => {
+    btn.hidden = true;
+    toast('📲', 'Installed!', 'LiveRates is on your home screen');
+  });
+}
+
+// Keys written by features that no longer exist
+function cleanupStorage() {
+  try { ['lr_admin_key'].forEach(k => localStorage.removeItem(k)); } catch {}
 }
 
 // ── Confetti ──────────────────────────────────────────────────────────────────
@@ -1410,34 +1660,66 @@ function initEasterEggs() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+// External artwork (coin logos, album art) that fails to load is hidden
+// rather than left as a broken-image icon.
+document.addEventListener('error', e => {
+  if (e.target.tagName === 'IMG') e.target.style.visibility = 'hidden';
+}, true);
+
 document.addEventListener('DOMContentLoaded', () => {
+  cleanupStorage();
   applyTheme(THEMES.includes(profile.theme) ? profile.theme : 'midnight');
   trackVisit();
   renderLevel();
   showBanter();
   renderGameIdle();
   initSearch();
-  loadAll();
-  tickClock();
-  initTilt();
   initEasterEggs();
+  initPWA();
+  updateNetStatus();
+
+  switchTab(initialTab());
+  tickClock();
+
+  // other tabs load in the background so search finds everything and
+  // switching tabs is instant
+  setTimeout(() => Object.keys(TABS).filter(t => t !== activeTab).forEach(t => loadTab(t)), 2500);
 
   setInterval(tickClock, 1000);
-  setInterval(loadAll, 5 * 60 * 1000);
+  setInterval(() => loadTab(activeTab), 60 * 1000); // reloads only what's stale
   setInterval(showBanter, 45 * 1000);
 
-  el('refreshAll')?.addEventListener('click', loadAll);
-  el('brand')?.addEventListener('click', () => { unlock('confetti'); burstConfetti(); });
-  el('themeBtn')?.addEventListener('click', cycleTheme);
-  el('zenBtn')?.addEventListener('click', enterZen);
-  el('zenExit')?.addEventListener('click', exitZen);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') loadTab(activeTab);
+  });
+  window.addEventListener('online', () => { updateNetStatus(); loadTab(activeTab, true); });
+  window.addEventListener('offline', updateNetStatus);
+  window.addEventListener('hashchange', () => {
+    const t = location.hash.slice(1);
+    if (TABS[t] && t !== activeTab) switchTab(t);
+  });
+
+  el('tabs').addEventListener('click', e => {
+    const tab = e.target.closest('.tab');
+    if (tab) switchTab(tab.dataset.tab, { scroll: true });
+  });
+
+  el('refreshAll').addEventListener('click', refreshNow);
+  el('brand').addEventListener('click', () => { unlock('confetti'); burstConfetti(); });
+  el('themeBtn').addEventListener('click', cycleTheme);
+  el('zenBtn').addEventListener('click', enterZen);
+  el('zenExit').addEventListener('click', exitZen);
+  el('chartClose').addEventListener('click', closeChart);
+  el('chartBackdrop').addEventListener('click', closeChart);
 
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     const k = e.key.toLowerCase();
-    if (k === 'r') loadAll();
+    const tabKeys = Object.keys(TABS);
+    if (k >= '1' && k <= String(tabKeys.length)) switchTab(tabKeys[+k - 1], { scroll: true });
+    else if (k === 'r') refreshNow();
     else if (k === 't') cycleTheme();
     else if (k === 'z') el('zenOverlay').hidden ? enterZen() : exitZen();
     else if (k === 'escape') {
@@ -1446,17 +1728,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  el('chartClose')?.addEventListener('click', closeChart);
-  el('chartBackdrop')?.addEventListener('click', closeChart);
-
   document.addEventListener('click', e => {
     const play = e.target.closest('.play-btn');
     if (play) { togglePreview(play); return; }
     const pk = e.target.closest('.pakcom-item');
-    if (pk) { openChart(+pk.dataset.si, +pk.dataset.ii); return; }
-    const btn = e.target.closest('[data-refresh]');
-    if (!btn) return;
-    const mod = MODULES.find(m => m.name === btn.dataset.refresh);
-    if (mod) loadModule(mod);
+    if (pk) openChart(+pk.dataset.si, +pk.dataset.ii);
   });
 });

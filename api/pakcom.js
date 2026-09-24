@@ -1,8 +1,7 @@
 // Pakistani daily commodities — fuel, energy, meat, grocery, produce.
 //
 // Fuel layer: live multi-source scrape (OGRA, pakfuel.today, petrolrate.pk,
-//             hamariweb, PSO) — first sane result wins; see /api/probe for
-//             which sources are reachable from this deployment.
+//             hamariweb, PSO) — first sane result wins.
 // Base layer: data/pak-commodities.json — editable reference source that
 //             also carries per-item price history for graphs and forecasts.
 const fs = require('fs');
@@ -42,11 +41,8 @@ module.exports = async function handler(req, res) {
           item.liveNow = true; // this request scraped it live, right now
           liveFuel = true;
           fuelSource = fuel.source;
-          // Extend history with today's point so the chart doesn't stop at
-          // the last saved date. This is in-memory only — it does NOT write
-          // back to data/pak-commodities.json, so it resets on every request
-          // unless the daily cron (api/cron-update-history.js) has already
-          // persisted today's point, in which case this just refreshes it.
+          // Extend history with today's live point (in memory only) so the
+          // chart runs up to today instead of stopping at the last saved date.
           const hist = item.history ?? (item.history = []);
           const last = hist[hist.length - 1];
           if (!last || last[0] !== today) hist.push([today, live]);
@@ -67,7 +63,7 @@ module.exports = async function handler(req, res) {
       sections: json.sections,
       source: liveFuel
         ? `Live fuel: ${fuelSource} · other items: reference (${json.updated})`
-        : `Reference rates (${json.updated}) — live fuel sources unreachable, see /api/probe`,
+        : `Reference rates (${json.updated}) — live fuel sources unreachable`,
     },
     source: 'pak-commodities',
   });

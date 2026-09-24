@@ -2,196 +2,176 @@
 <html lang="en" data-theme="midnight">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LiveRates Dashboard</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
-    <link rel="stylesheet" href="/css/styles.css?v=19">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>LiveRates — Pakistan Markets, Karachi &amp; Trending</title>
+    <meta name="description" content="Live gold, fuel, currency, crypto and PSX KSE-100 rates, Karachi prayer times and 7-day weather, and trending music — in one place.">
+    <meta name="theme-color" content="#0b0b16">
+
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LiveRates">
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="LiveRates — Pakistan Markets, Karachi &amp; Trending">
+    <meta property="og:description" content="Gold, fuel, dollar, crypto and PSX rates, Karachi prayer times &amp; weather, and trending music — live.">
+    <meta property="og:url" content="https://issue-tracker-javascript.vercel.app/">
+    <meta property="og:image" content="https://issue-tracker-javascript.vercel.app/icons/icon-512.png">
+    <meta name="twitter:card" content="summary">
+
+    <link rel="stylesheet" href="/css/styles.css?v=20">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
 
-    <header class="site-header">
-        <div class="header-inner">
-            <div class="brand" id="brand" title="✨">
-                <span class="brand-icon">📊</span>
+    <header class="topbar">
+        <div class="topbar-inner">
+            <button class="brand" id="brand" title="✨" aria-label="LiveRates">
+                <img src="/icons/icon.svg" alt="" width="28" height="28">
                 <span class="brand-name">LiveRates</span>
+            </button>
+
+            <div class="search" id="search">
+                <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="searchInput" class="search-input"
+                       placeholder="Search gold, petrol, dollar, songs…"
+                       autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Search">
+                <button class="search-clear" id="searchClear" aria-label="Clear search">✕</button>
+                <div class="search-results" id="searchResults" hidden></div>
             </div>
-            <div class="header-center">
-                <div class="pill" id="levelPill" title="Your level — earn XP by visiting, refreshing and predicting">
-                    <span id="levelLabel">Lv 1 · Rookie</span>
+
+            <div class="actions">
+                <div class="level-chip" id="levelPill" title="Your level — earn XP by visiting, refreshing and predicting">
+                    <span id="levelLabel">Lv 1</span>
                     <span class="xp-bar"><span class="xp-fill" id="xpFill"></span></span>
+                    <span class="streak">🔥 <span id="streakCount">1</span></span>
                 </div>
-                <div class="pill" id="streakPill" title="Daily visit streak">🔥 <span id="streakCount">1</span></div>
-                <span id="pkClock" class="pk-clock"></span>
-            </div>
-            <div class="header-controls">
-                <button class="btn-icon" id="themeBtn" title="Switch theme (T)">🎨</button>
-                <button class="btn-icon" id="zenBtn" title="Zen mode (Z)">🧘</button>
-                <div class="live-badge">
-                    <span class="live-dot"></span>
-                    LIVE
-                </div>
-                <button id="refreshAll" class="btn-refresh" title="Press R">↻</button>
+                <button class="icon-btn" id="installBtn" title="Install app" aria-label="Install app" hidden>
+                    <svg viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>
+                </button>
+                <button class="icon-btn" id="themeBtn" title="Theme (T)" aria-label="Change theme">
+                    <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.5-.5-1-1-1h-3.5a2 2 0 0 1-1.5-3.3l.4-.5A2 2 0 0 0 14 4.2 9 9 0 0 0 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="7.5" cy="15" r="1"/></svg>
+                </button>
+                <button class="icon-btn" id="zenBtn" title="Zen mode (Z)" aria-label="Zen mode">
+                    <svg viewBox="0 0 24 24"><path d="M12 21c-5 0-8-3-8-7 3 0 6 1 8 4 2-3 5-4 8-4 0 4-3 7-8 7Z"/><path d="M12 18c-2-3-2-8 0-13 2 5 2 10 0 13Z"/></svg>
+                </button>
+                <button class="icon-btn icon-btn-accent" id="refreshAll" title="Refresh (R)" aria-label="Refresh">
+                    <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+                </button>
             </div>
         </div>
+
+        <nav class="tabs" id="tabs" aria-label="Sections">
+            <button class="tab" data-tab="markets"><span class="tab-icon">📈</span><span>Markets</span></button>
+            <button class="tab" data-tab="pakistan"><span class="tab-icon">🇵🇰</span><span>Pakistan</span></button>
+            <button class="tab" data-tab="karachi"><span class="tab-icon">🕌</span><span>Karachi</span></button>
+            <button class="tab" data-tab="entertainment"><span class="tab-icon">🎧</span><span>Entertainment</span></button>
+        </nav>
     </header>
 
-    <div class="ticker-bar" id="tickerBar" aria-hidden="true">
+    <div class="ticker" aria-hidden="true">
         <div class="ticker-track" id="tickerTrack"></div>
     </div>
 
-    <div class="banter-bar"><span class="banter" id="banter"></span></div>
-
-    <div class="search-bar-wrap">
-        <div class="search-inner">
-            <span class="search-icon">🔍</span>
-            <input type="search" id="searchInput" class="search-input"
-                   placeholder="Search crypto, gold, movies, songs…"
-                   autocomplete="off" autocorrect="off" spellcheck="false">
-            <button class="search-clear" id="searchClear" aria-label="Clear">✕</button>
+    <main class="page">
+        <div class="page-head">
+            <div>
+                <h1 class="page-title" id="pageTitle">Markets</h1>
+                <div class="page-meta">
+                    <span class="status" id="netStatus"><span class="status-dot"></span><span id="netLabel">Live</span></span>
+                    <span class="sep">·</span>
+                    <span id="pkClock"></span>
+                    <span class="sep" id="updatedSep" hidden>·</span>
+                    <span id="updatedAt"></span>
+                </div>
+            </div>
+            <p class="banter" id="banter" title="Tap for a fresh one"></p>
         </div>
-        <div class="search-results" id="searchResults" hidden></div>
-    </div>
 
-    <main class="dashboard">
-        <section class="card span-2" id="card-crypto">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">₿</span>
-                    <h2>Crypto Rates (PKR · USD)</h2>
-                </div>
-                <button class="btn-icon" data-refresh="crypto" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="crypto-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
+        <!-- ── Markets ─────────────────────────────────────────────────── -->
+        <section class="panel" data-panel="markets">
+            <article class="card span-2" id="card-crypto">
+                <header class="card-head"><span class="card-badge">₿</span><h2>Crypto</h2><span class="card-note">PKR · USD</span></header>
+                <div class="card-body" id="crypto-content"></div>
+            </article>
+
+            <article class="card" id="card-mood">
+                <header class="card-head"><span class="card-badge">🧭</span><h2>Market Mood</h2><span class="card-note">Fear &amp; Greed</span></header>
+                <div class="card-body" id="mood-content"></div>
+            </article>
+
+            <article class="card" id="card-commodities">
+                <header class="card-head"><span class="card-badge">🥇</span><h2>Gold, Silver &amp; Oil</h2></header>
+                <div class="card-body" id="commodities-content"></div>
+            </article>
+
+            <article class="card" id="card-psx">
+                <header class="card-head"><span class="card-badge">🏛️</span><h2>PSX · KSE-100</h2></header>
+                <div class="card-body" id="psx-content"></div>
+            </article>
+
+            <article class="card" id="card-game">
+                <header class="card-head"><span class="card-badge">🎮</span><h2>Predict BTC</h2><span class="card-note" id="gamePoints">0 pts</span></header>
+                <div class="card-body" id="game-content"></div>
+            </article>
         </section>
 
-        <section class="card" id="card-game">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">🎮</span>
-                    <h2>Predict BTC</h2>
-                </div>
-                <span class="pill pill-sm" id="gamePoints">0 pts</span>
-            </div>
-            <div class="card-content" id="game-content"></div>
+        <!-- ── Pakistan ────────────────────────────────────────────────── -->
+        <section class="panel" data-panel="pakistan" hidden>
+            <article class="card" id="card-currency">
+                <header class="card-head"><span class="card-badge">💱</span><h2>Currency</h2><span class="card-note">vs PKR</span></header>
+                <div class="card-body" id="currency-content"></div>
+            </article>
+
+            <article class="card span-2" id="card-pakcom">
+                <header class="card-head"><span class="card-badge">🛒</span><h2>Daily Rates</h2><span class="card-note">Tap for chart</span></header>
+                <div class="card-body" id="pakcom-content"></div>
+            </article>
         </section>
 
-        <section class="card" id="card-mood">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">🧭</span>
-                    <h2>Market Mood</h2>
-                </div>
-                <button class="btn-icon" data-refresh="mood" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="mood-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
+        <!-- ── Karachi ─────────────────────────────────────────────────── -->
+        <section class="panel" data-panel="karachi" hidden>
+            <article class="card" id="card-prayer">
+                <header class="card-head"><span class="card-badge">🕌</span><h2>Prayer Times</h2><span class="card-note" id="hijriDate"></span></header>
+                <div class="card-body" id="prayer-content"></div>
+            </article>
+
+            <article class="card span-2" id="card-weather">
+                <header class="card-head"><span class="card-badge">🌤️</span><h2>Weather</h2><span class="card-note">7 days</span></header>
+                <div class="card-body" id="weather-content"></div>
+            </article>
         </section>
 
-        <section class="card" id="card-commodities">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">🏦</span>
-                    <h2>Gold · Silver · Copper · Oil</h2>
-                </div>
-                <button class="btn-icon" data-refresh="commodities" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="commodities-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
-        </section>
+        <!-- ── Entertainment ───────────────────────────────────────────── -->
+        <section class="panel" data-panel="entertainment" hidden>
+            <article class="card" id="card-movies">
+                <header class="card-head"><span class="card-badge">🎬</span><h2>Top Movies</h2></header>
+                <div class="card-body" id="movies-content"></div>
+            </article>
 
-        <section class="card" id="card-converter">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">💱</span>
-                    <h2>USD ⇄ PKR Converter</h2>
-                </div>
-                <button class="btn-icon" data-refresh="converter" title="Refresh rate">↻</button>
-            </div>
-            <div class="card-content" id="converter-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
-        </section>
+            <article class="card" id="card-music">
+                <header class="card-head"><span class="card-badge">🎵</span><h2>Global Top 10</h2></header>
+                <div class="card-body" id="music-content"></div>
+            </article>
 
-        <section class="card" id="card-currencies">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">💵</span>
-                    <h2>Currency Rates (PKR)</h2>
-                </div>
-                <button class="btn-icon" data-refresh="currencies" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="currencies-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
+            <article class="card" id="card-musicpk">
+                <header class="card-head"><span class="card-badge">🇵🇰</span><h2>Pakistan Trending</h2></header>
+                <div class="card-body" id="musicpk-content"></div>
+            </article>
         </section>
-
-        <section class="card span-2" id="card-pakcom">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">🛒</span>
-                    <h2>Pakistan Daily Rates</h2>
-                </div>
-                <button class="btn-icon" data-refresh="pakcom" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="pakcom-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
-        </section>
-
-        <section class="card" id="card-movies">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">🎬</span>
-                    <h2>Top 10 Movies</h2>
-                </div>
-                <button class="btn-icon" data-refresh="movies" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="movies-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
-        </section>
-
-        <section class="card" id="card-music">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">🎵</span>
-                    <h2>Global Top 10 Songs</h2>
-                </div>
-                <button class="btn-icon" data-refresh="music" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="music-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
-        </section>
-
-        <section class="card" id="card-musicpk">
-            <div class="card-header">
-                <div class="card-title-group">
-                    <span class="card-icon">🇵🇰</span>
-                    <h2>Pakistan Trending Songs</h2>
-                </div>
-                <button class="btn-icon" data-refresh="musicpk" title="Refresh">↻</button>
-            </div>
-            <div class="card-content" id="musicpk-content">
-                <div class="loading-state"><div class="spinner"></div></div>
-            </div>
-        </section>
-
     </main>
 
-    <footer class="site-footer">
-        <p>Auto-refreshes every 5 minutes &middot; <kbd>R</kbd> refresh &middot; <kbd>T</kbd> theme &middot; <kbd>Z</kbd> zen &middot; Market data may be delayed up to 15 minutes</p>
+    <footer class="footer">
+        <p><kbd>1</kbd>–<kbd>4</kbd> sections · <kbd>R</kbd> refresh · <kbd>T</kbd> theme · <kbd>Z</kbd> zen</p>
+        <p class="footer-muted">Market data may be delayed. Install on iPhone: Share → Add to Home Screen.</p>
     </footer>
 
     <div class="zen-overlay" id="zenOverlay" hidden>
-        <button class="zen-exit" id="zenExit">✕</button>
+        <button class="zen-exit" id="zenExit" aria-label="Exit zen mode">✕</button>
         <div class="zen-stage">
-            <div class="zen-ring" id="zenRing"></div>
+            <div class="zen-ring"></div>
             <div class="zen-phase" id="zenPhase">Breathe in</div>
         </div>
         <div class="zen-quote" id="zenQuote"></div>
@@ -202,19 +182,20 @@
 
     <div class="chart-modal" id="chartModal" hidden>
         <div class="chart-backdrop" id="chartBackdrop"></div>
-        <div class="chart-dialog">
+        <div class="chart-dialog" role="dialog" aria-modal="true">
             <div class="chart-head">
                 <div>
                     <div class="chart-title" id="chartTitle"></div>
                     <div class="chart-sub" id="chartSub"></div>
                 </div>
-                <button class="btn-icon" id="chartClose" aria-label="Close">✕</button>
+                <button class="icon-btn" id="chartClose" aria-label="Close">✕</button>
             </div>
             <div id="chartBody"></div>
             <div class="chart-forecast" id="chartForecast"></div>
         </div>
     </div>
 
-    <script src="/js/app.js?v=21"></script>
+    <script src="/js/app.js?v=22"></script>
+    <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

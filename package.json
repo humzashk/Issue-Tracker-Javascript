@@ -1,7 +1,8 @@
 {
   "name": "live-rates-dashboard",
-  "version": "1.0.0",
-  "description": "Live dashboard: crypto, commodities, sports scores, trending movies & songs",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Pakistan-focused live dashboard: markets, daily rates, Karachi prayer times & weather, trending music",
   "engines": {
     "node": ">=18"
   }
