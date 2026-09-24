@@ -421,6 +421,18 @@ img { max-width: 100%; }
   white-space: nowrap;
 }
 
+.madhab-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .card-body { padding: 14px 18px 18px; min-height: 96px; }
 
 /* ── Loading / error / empty ────────────────────────────────────────────── */

@@ -757,7 +757,6 @@ function renderPrayer(p) {
   if (!p?.timings?.length) { showError('prayer-content', 'Prayer times unavailable right now'); return; }
   prayerData = p;
   prayerKey = null;
-  el('hijriDate').textContent = p.hijri ?? '';
   drawPrayer();
 }
 
@@ -791,7 +790,7 @@ function drawPrayer() {
     </div>
     <div class="prayer-list">${rows}</div>
     <div class="meta prayer-meta">
-      <span>Azan = start time + your mosque's delay · ${esc(p.method || '')}</span>
+      <span>${p.hijri ? esc(p.hijri) + ' · ' : ''}Azan = start time + your mosque's delay · ${esc(p.method || '')}</span>
       <button class="link-btn" id="azanEdit">Adjust to my mosque</button>
     </div>
   `);

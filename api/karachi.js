@@ -64,7 +64,7 @@ async function fetchPrayer() {
       { name: 'Maghrib', time: cleanTime(t.Maghrib) },
       { name: 'Isha', time: cleanTime(t.Isha) },
     ],
-    method: 'Azan (start) times · Univ. of Islamic Sciences, Karachi · Hanafi Asr',
+    method: 'Azan (start) times · Univ. of Islamic Sciences, Karachi',
   };
 }
 
@@ -273,11 +273,11 @@ module.exports = async function handler(req, res) {
   if (p) {
     try {
       p.timings = await fetchDawateIslami(p.timings);
-      p.method = 'Dawat-e-Islami timetable (Hanafi)';
+      p.method = 'Dawat-e-Islami timetable';
       p.source = 'dawateislami';
     } catch (e) {
       diError = { message: e.message, picked: e.picked ?? null };
-      p.method = 'Calculated · Univ. of Islamic Sciences, Karachi · Hanafi (Dawat-e-Islami unreachable)';
+      p.method = 'Calculated · Univ. of Islamic Sciences, Karachi (Dawat-e-Islami unreachable)';
       p.source = 'calculated';
     }
   }
