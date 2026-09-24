@@ -68,6 +68,93 @@ async function fetchPrayer() {
   };
 }
 
+// ── Dawat-e-Islami timetable ───────────────────────────────────────────────
+// Dawat-e-Islami publishes its own Hanafi timetable for Karachi, which many
+// Karachi mosques follow. There's no public API, so the page is read and
+// each prayer's time is taken from the text near its name. Every value
+// must land within 20 minutes of the calculated Hanafi time for that
+// prayer — the same check also stops a Shafi'i Asr listed on the page
+// (about an hour earlier) from being mistaken for Hanafi Asr. If any of
+// the five prayers can't be read with confidence, the calculated times
+// are used instead and the card says so.
+const DI_URL = 'https://www.dawateislami.net/prayer-times/world/pakistan/karachi-prayer-times';
+const DI_LABELS = {
+  Fajr: /\bfajr\b/gi,
+  Sunrise: /\b(sunrise|tulu)\b/gi,
+  Dhuhr: /\b(dhuhr|zuhr|zohr|duhr)\b/gi,
+  Asr: /\basr\b/gi,
+  Maghrib: /\bmaghrib\b/gi,
+  Isha: /\bisha\b/gi,
+};
+
+const toMin = hhmm => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const fromMin = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+// Every time-looking token after a label occurrence, normalised to 24h
+// minutes. A 12h time without AM/PM is resolved to whichever half of the
+// day is closer to the reference.
+function timeCandidates(text, labelRe, refMin) {
+  const out = [];
+  for (const m of text.matchAll(labelRe)) {
+    const win = text.slice(m.index + m[0].length, m.index + m[0].length + 90);
+    const t = win.match(/(\d{1,2})\s*[:.]\s*(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?/i);
+    if (!t) continue;
+    let h = +t[1];
+    const min = +t[2];
+    if (h > 23 || min > 59) continue;
+    const ap = (t[3] || '').toLowerCase().replace(/\./g, '');
+    if (ap === 'pm' && h < 12) h += 12;
+    else if (ap === 'am' && h === 12) h = 0;
+    else if (!ap && h < 12 && Math.abs(h * 60 + min + 720 - refMin) < Math.abs(h * 60 + min - refMin)) h += 12;
+    out.push(h * 60 + min);
+  }
+  return out;
+}
+
+function parseDawateIslami(html, reference) {
+  const text = html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\\u003c[^>]*?\\u003e/g, ' ')
+    .replace(/&nbsp;|&#160;/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  const picked = {};
+  for (const t of reference) {
+    const ref = toMin(t.time);
+    const best = timeCandidates(text, DI_LABELS[t.name], ref)
+      .filter(v => Math.abs(v - ref) <= 20)
+      .sort((a, b) => Math.abs(a - ref) - Math.abs(b - ref))[0];
+    if (best != null) picked[t.name] = fromMin(best);
+  }
+  const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+  if (!prayers.every(n => picked[n])) {
+    const err = new Error('could not read all five prayers');
+    err.picked = picked;
+    throw err;
+  }
+  return reference.map(t => ({ ...t, time: picked[t.name] ?? t.time }));
+}
+
+async function fetchDawateIslami(reference) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(DI_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return parseDawateIslami(await res.text(), reference);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchWeather() {
   const j = await getJSON(
     'https://api.open-meteo.com/v1/forecast' +
@@ -173,10 +260,27 @@ async function fetchAirQuality() {
 }
 
 module.exports = async function handler(req, res) {
+  const debug = req.query?.debug === '1';
   const [prayer, weather, air, obs] = await Promise.allSettled([
     fetchPrayer(), fetchWeather(), fetchAirQuality(), fetchObservation(),
   ]);
   const ok = r => (r.status === 'fulfilled' ? r.value : null);
+
+  // Prefer Dawat-e-Islami's published timetable; the calculated Hanafi times
+  // are the reference it's checked against and the fallback.
+  const p = ok(prayer);
+  let diError = null;
+  if (p) {
+    try {
+      p.timings = await fetchDawateIslami(p.timings);
+      p.method = 'Dawat-e-Islami timetable (Hanafi)';
+      p.source = 'dawateislami';
+    } catch (e) {
+      diError = { message: e.message, picked: e.picked ?? null };
+      p.method = 'Calculated · Univ. of Islamic Sciences, Karachi · Hanafi (Dawat-e-Islami unreachable)';
+      p.source = 'calculated';
+    }
+  }
 
   // Prefer the real airport observation for "now"; keep the model's day/night
   // flag for the icon. Falls back to the model's current values if METAR fails.
@@ -194,8 +298,10 @@ module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
   res.json({
     success: true,
-    data: { prayer: ok(prayer), weather: ok(weather), air: ok(air) },
+    data: { prayer: p, weather: ok(weather), air: ok(air) },
+    ...(debug ? { debug: { dawateIslami: diError ?? 'ok' } } : {}),
   });
 };
 
 module.exports.parseMetar = parseMetar;
+module.exports.parseDawateIslami = parseDawateIslami;
