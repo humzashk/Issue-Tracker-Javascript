@@ -327,9 +327,11 @@ function renderCommodities(data) {
 
   let anyDelta = false;
   const items = data.map(c => {
-    const prev = trackCommodityDay(c.id, c.price);
-    const delta = prev != null && c.price != null ? c.price - prev : null;
-    const pct = delta != null && prev ? (delta / prev) * 100 : null;
+    // Oil carries the exchange's own change vs previous settlement; the
+    // rest fall back to this browser's day-over-day record.
+    const prev = c.change != null ? null : trackCommodityDay(c.id, c.price);
+    const delta = c.change ?? (prev != null && c.price != null ? c.price - prev : null);
+    const pct = c.change != null ? c.changePct : delta != null && prev ? (delta / prev) * 100 : null;
     if (delta != null) anyDelta = true;
     return `
     <div class="row">

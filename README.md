@@ -6,7 +6,7 @@ Pakistan-focused live dashboard — markets, daily rates, Karachi essentials and
 
 | Tab | Cards | Sources |
 |---|---|---|
-| **Markets** | Crypto (PKR + USD, 7-day sparklines) · Market Mood · Gold, Silver & Oil · PSX KSE-100 · Predict BTC game | CoinGecko · alternative.me · gold.pk, oilprice.com, Yahoo Finance · PSX Data Portal |
+| **Markets** | Crypto (PKR + USD, 7-day sparklines) · Market Mood · Gold, Silver & Oil · PSX KSE-100 · Predict BTC game | CoinGecko · alternative.me · gold.pk, ICE/NYMEX futures (Yahoo Finance + Stooq) · PSX Data Portal |
 | **Pakistan** | Currency converter + rates · Daily Rates (fuel, meat, grocery, produce) with charts & 30-day forecast | open.er-api.com · live fuel scrape + `data/pak-commodities.json` |
 | **Karachi** | Prayer times (next-prayer countdown, Hijri date) · 7-day weather + air quality | Aladhan (Univ. of Islamic Sciences, Karachi · Hanafi) · Open-Meteo |
 | **Entertainment** | Top movies · Global Top 10 · Pakistan trending (30s previews) | IMDb/OMDb · Spotify/YouTube daily charts, Apple, Deezer |

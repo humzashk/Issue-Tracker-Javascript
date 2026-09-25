@@ -6,14 +6,15 @@
 // Spot is still fetched, but only as a plausibility yardstick for validating
 // what was scraped, and as a clearly-labelled fallback if gold.pk is down.
 //
-// Crude Oil (Brent/WTI) tries oilprice.com's homepage ticker first, with the
-// existing Yahoo Finance quote kept as both the plausibility anchor and the
-// fallback. Unlike gold — which genuinely differs from spot by local duty —
-// Brent/WTI are a single global USD price, so a scraped value more than 12%
-// off Yahoo's quote is treated as a bad parse, not a real market gap, and
-// rejected in favour of the Yahoo figure.
+// Crude oil comes straight from the exchange benchmarks — the prices news
+// wires quote: ICE Brent and NYMEX WTI front-month futures, read from Yahoo
+// Finance's market-data feed (quoted within minutes of the exchange). Each
+// is cross-checked against a second, independent feed (Stooq): within 1.5%
+// the card says "verified"; if the two disagree more than that, the card
+// says so instead of silently picking one. Change is measured against the
+// exchange's previous settlement, not estimated in the browser.
 //
-// Add ?debug=1 to any request to see the scrape candidates and why one won.
+// Add ?debug=1 to any request to see the raw figures from each source.
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
@@ -27,7 +28,11 @@ const GOLD_PK_URLS = [
   'https://www.gold.pk/karachi-gold-rates.html',
 ];
 
-const OILPRICE_URLS = ['https://oilprice.com/'];
+const OIL = [
+  { id: 'oil-brent', name: 'Crude Oil (Brent)', yahoo: 'BZ=F', stooq: 'cb.f', market: 'ICE Brent futures' },
+  { id: 'oil-wti', name: 'Crude Oil (WTI)', yahoo: 'CL=F', stooq: 'cl.f', market: 'NYMEX WTI futures' },
+];
+const OIL_SANE = v => Number.isFinite(v) && v > 10 && v < 400;
 
 async function fetchWith(url, timeoutMs = 8000, accept = 'text/html') {
   const ctrl = new AbortController();
@@ -186,69 +191,79 @@ async function scrapeGoldPk(expectedGold, expectedSilver) {
   return { gold: null, silver: null, url: null, tried };
 }
 
-// oilprice.com's markup isn't known ahead of time (their ticker may also be
-// client-rendered, in which case this simply finds nothing and falls back —
-// that's the correct, honest outcome, not an error). This looks for the
-// benchmark name followed shortly after by a plausible $-style number, then
-// leans on the tight plausibility band (not a wide label search) to keep a
-// coincidental nearby number — a year, a percentage, an unrelated commodity
-// price — from ever being mistaken for the real quote.
-function extractOilBenchmark(text, labelRe, expected) {
-  // labelRe.source is wrapped in a non-capturing group: it contains its own
-  // top-level "|" (e.g. "brent\s*crude|\bbrent\b"), and without the group,
-  // regex alternation's low precedence would split the WHOLE pattern in two
-  // — "brent crude" alone would match and return, silently dropping the
-  // "must be followed by a number" requirement for that branch entirely.
-  const re = new RegExp(`(?:${labelRe.source})` + String.raw`[^]{0,120}?\$?\s*(\d{1,3}(?:\.\d{1,2})?)`, 'i');
-  const m = text.match(re);
-  if (!m) return null;
-  const value = parseFloat(m[1]);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (!plausibleOil(value, expected)) return null;
-  return { value, context: text.slice(Math.max(0, m.index - 20), m.index + m[0].length + 20).trim() };
-}
-
-// Brent/WTI are one global USD price, not a locally-premiumed rate like
-// gold, so this band is deliberately tight — a scrape this far from Yahoo's
-// quote is a bad parse, not a real market gap.
-function plausibleOil(value, expected) {
-  if (value == null) return false;
-  if (!expected) return value > 0;
-  return value >= expected * 0.88 && value <= expected * 1.12;
-}
-
-async function scrapeOilPrice(expectedBrent, expectedWti) {
-  const tried = [];
-  for (const url of OILPRICE_URLS) {
+// Front-month futures quote with previous settlement and quote time.
+// Tries both of Yahoo's hosts — one is sometimes rate-limited.
+async function yahooQuote(symbol) {
+  let lastErr;
+  for (const host of ['query1', 'query2']) {
     try {
-      const res = await fetchWith(url);
-      const text = htmlToRows(await res.text()).join(' ').toLowerCase();
-      const brent = extractOilBenchmark(text, /brent\s*crude|\bbrent\b/, expectedBrent);
-      const wti = extractOilBenchmark(text, /wti\s*crude|\bwti\b/, expectedWti);
-      tried.push({
-        url,
-        ok: true,
-        brent: brent ? { value: brent.value, context: brent.context } : null,
-        wti: wti ? { value: wti.value, context: wti.context } : null,
-      });
-      if (brent || wti) return { brent, wti, url, tried };
+      const res = await fetchWith(
+        `https://${host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,
+        7000,
+        'application/json'
+      );
+      const meta = (await res.json())?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice;
+      if (!OIL_SANE(price)) throw new Error('no usable price');
+      return {
+        price,
+        prevClose: meta.chartPreviousClose ?? meta.previousClose ?? null,
+        asOf: meta.regularMarketTime ? meta.regularMarketTime * 1000 : null,
+      };
     } catch (e) {
-      tried.push({ url, ok: false, error: String(e.message).slice(0, 60) });
+      lastErr = e;
     }
   }
-  return { brent: null, wti: null, url: null, tried };
+  throw lastErr;
+}
+
+// Independent second feed. CSV: Symbol,Date,Time,Open,High,Low,Close
+async function stooqQuote(symbol) {
+  const res = await fetchWith(`https://stooq.com/q/l/?s=${symbol}&f=sd2t2ohlc&h&e=csv`, 7000, 'text/csv');
+  const [header, row] = (await res.text()).trim().split(/\r?\n/);
+  if (!row) throw new Error('empty');
+  const cols = header.split(',').map(c => c.trim().toLowerCase());
+  const vals = row.split(',');
+  const price = parseFloat(vals[cols.indexOf('close')]);
+  if (!OIL_SANE(price)) throw new Error('no usable price');
+  return { price };
+}
+
+async function oilQuote(o) {
+  const [y, s] = await Promise.allSettled([yahooQuote(o.yahoo), stooqQuote(o.stooq)]);
+  const yq = y.status === 'fulfilled' ? y.value : null;
+  const sq = s.status === 'fulfilled' ? s.value : null;
+  if (!yq && !sq) throw new Error(`${o.name}: no source available`);
+
+  const primary = yq ?? sq;
+  const diff = yq && sq ? Math.abs(yq.price - sq.price) / yq.price : null;
+  const verified = diff != null && diff <= 0.015;
+  const change = yq?.prevClose ? yq.price - yq.prevClose : null;
+
+  return {
+    id: o.id,
+    name: o.name,
+    unit: 'per barrel',
+    price: primary.price,
+    currency: 'USD',
+    live: true,
+    change,
+    changePct: change != null ? (change / yq.prevClose) * 100 : null,
+    asOf: yq?.asOf ?? null,
+    source: `${o.market}${verified ? ' · verified 2 sources' : diff != null ? ' · sources differ, check' : ''}`,
+    _raw: { yahoo: yq?.price ?? String(y.reason?.message), stooq: sq?.price ?? String(s.reason?.message), diffPct: diff != null ? +(diff * 100).toFixed(2) : null },
+  };
 }
 
 module.exports = async function handler(req, res) {
   const debug = req.query?.debug === '1';
 
-  const [pkrR, goldOzR, silverOzR, copperR, brentR, wtiR] = await Promise.allSettled([
+  const [pkrR, goldOzR, silverOzR, copperR, ...oilR] = await Promise.allSettled([
     fetchPKRRate(),
     fetchYahooPrice('GC=F'),
     fetchYahooPrice('SI=F'),
     fetchYahooPrice('HG=F'),
-    fetchYahooPrice('BZ=F'),
-    fetchYahooPrice('CL=F'),
+    ...OIL.map(oilQuote),
   ]);
 
   const val = r => (r.status === 'fulfilled' ? r.value : null);
@@ -256,8 +271,7 @@ module.exports = async function handler(req, res) {
   const goldOz = val(goldOzR);
   const silverOz = val(silverOzR);
   const copperLb = val(copperR);
-  const brent = val(brentR);
-  const wti = val(wtiR);
+  const oil = oilR.map(val).filter(Boolean);
 
   const spotTola = ozPrice =>
     ozPrice != null && pkr ? Math.round(ozPrice * TROY_OZ_PER_TOLA * pkr) : null;
@@ -270,13 +284,6 @@ module.exports = async function handler(req, res) {
     scraped = await scrapeGoldPk(expectedGold, expectedSilver);
   } catch (e) {
     console.error('gold.pk scrape failed:', e.message);
-  }
-
-  let scrapedOil = { brent: null, wti: null, url: null, tried: [] };
-  try {
-    scrapedOil = await scrapeOilPrice(brent, wti);
-  } catch (e) {
-    console.error('oilprice.com scrape failed:', e.message);
   }
 
   const data = [];
@@ -308,22 +315,7 @@ module.exports = async function handler(req, res) {
       live: true, source: 'LME spot (converted)',
     });
   }
-  const brentPrice = scrapedOil.brent?.value ?? brent;
-  if (brentPrice != null) {
-    data.push({
-      id: 'oil-brent', name: 'Crude Oil (Brent)', unit: 'per barrel',
-      price: brentPrice, currency: 'USD', live: true,
-      source: scrapedOil.brent ? 'oilprice.com' : 'Yahoo Finance',
-    });
-  }
-  const wtiPrice = scrapedOil.wti?.value ?? wti;
-  if (wtiPrice != null) {
-    data.push({
-      id: 'oil-wti', name: 'Crude Oil (WTI)', unit: 'per barrel',
-      price: wtiPrice, currency: 'USD', live: true,
-      source: scrapedOil.wti ? 'oilprice.com' : 'Yahoo Finance',
-    });
-  }
+  for (const { _raw, ...o } of oil) data.push(o);
 
   const usable = data.filter(d => d.price != null);
   if (!usable.length) {
@@ -335,8 +327,7 @@ module.exports = async function handler(req, res) {
     success: true,
     data: usable,
     goldSource: scraped.gold ? `gold.pk (${scraped.url})` : 'international spot fallback',
-    oilSource: scrapedOil.brent || scrapedOil.wti ? `oilprice.com (${scrapedOil.url})` : 'Yahoo Finance fallback',
-    source: 'gold.pk / oilprice.com / Yahoo Finance / ExchangeRate API',
+    source: 'gold.pk / ICE & NYMEX futures via Yahoo Finance + Stooq / ExchangeRate API',
     ...(debug
       ? {
           debug: {
@@ -349,15 +340,11 @@ module.exports = async function handler(req, res) {
               ? { min: Math.round(expectedGold * 0.8), max: Math.round(expectedGold * 1.9) }
               : null,
             attempts: scraped.tried,
-            yahooBrent: brent,
-            yahooWti: wti,
-            oilAcceptWindow: {
-              brent: brent ? { min: +(brent * 0.88).toFixed(2), max: +(brent * 1.12).toFixed(2) } : null,
-              wti: wti ? { min: +(wti * 0.88).toFixed(2), max: +(wti * 1.12).toFixed(2) } : null,
-            },
-            oilAttempts: scrapedOil.tried,
+            oil: oil.map(o => ({ id: o.id, ...o._raw })),
           },
         }
       : {}),
   });
 };
+
+module.exports.oilQuote = oilQuote;
