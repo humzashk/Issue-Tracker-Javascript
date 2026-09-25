@@ -4,6 +4,11 @@
 //   /timeseries/eod/KSE100 → {"status":1,"data":[[epoch, close, volume, open], …]}
 //   /timeseries/int/KSE100 → intraday ticks, [[epoch, price, volume], …]
 //   Both newest-first; sorted defensively here anyway.
+//   Since 24 Sep 2026 every data endpoint returns 403 unless the request
+//   carries an X-Req-Id header. The token is embedded in the portal's HTML
+//   (<script>window.__ps = {…,"_k":"<token>",…}</script>) and rotates about
+//   every 5 minutes; no cookies are involved. It's cached per warm function
+//   instance and refreshed once on a 403.
 // Fallback: Yahoo Finance ^KSE.
 //
 // "Live" is decided from the data, not the clock: the latest intraday tick
@@ -23,10 +28,71 @@ async function getJSON(url, headers = {}) {
       headers: { 'User-Agent': UA, Accept: 'application/json, text/plain, */*', ...headers },
       signal: ctrl.signal,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
     return await res.json();
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ── PSX request token ────────────────────────────────────────────────────
+const PSX = 'https://dps.psx.com.pk';
+const TOKEN_TTL = 4 * 60 * 1000; // rotates ~5 min; refresh a little early
+let psxToken = null;
+let psxTokenAt = 0;
+
+function extractToken(html) {
+  const m = String(html).match(/"_k"\s*:\s*"([^"]+)"/);
+  return m ? m[1] : null;
+}
+
+// Concurrent callers (the eod + intraday requests) share one page fetch
+let tokenInFlight = null;
+function freshToken() {
+  tokenInFlight ??= fetchToken().finally(() => { tokenInFlight = null; });
+  return tokenInFlight;
+}
+
+async function fetchToken() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(`${PSX}/`, {
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml', 'Accept-Language': 'en-US,en;q=0.9' },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`PSX page HTTP ${res.status}`);
+    const token = extractToken(await res.text());
+    if (!token) throw new Error('PSX token not found in page');
+    psxToken = token;
+    psxTokenAt = Date.now();
+    return token;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function psxToken_() {
+  return psxToken && Date.now() - psxTokenAt < TOKEN_TTL ? psxToken : freshToken();
+}
+
+// GET a PSX data endpoint with the token; on 403 get a new token and retry once
+async function psxGet(path) {
+  const headers = (token) => ({
+    Referer: `${PSX}/`,
+    'X-Req-Id': token,
+    'X-Requested-With': 'XMLHttpRequest',
+    'Accept-Language': 'en-US,en;q=0.9',
+  });
+  try {
+    return await getJSON(PSX + path, headers(await psxToken_()));
+  } catch (e) {
+    if (e.status !== 403) throw e;
+    return getJSON(PSX + path, headers(await freshToken()));
   }
 }
 
@@ -41,14 +107,17 @@ function rows(json, priceIdx) {
 }
 
 async function fromPsx() {
-  const headers = { Referer: 'https://dps.psx.com.pk/' };
+  await psxToken_(); // one token fetch shared by both requests below
   const [eodR, intR] = await Promise.allSettled([
-    getJSON('https://dps.psx.com.pk/timeseries/eod/KSE100', headers),
-    getJSON('https://dps.psx.com.pk/timeseries/int/KSE100', headers),
+    psxGet('/timeseries/eod/KSE100'),
+    psxGet('/timeseries/int/KSE100'),
   ]);
   const eod = eodR.status === 'fulfilled' ? rows(eodR.value, 1) : [];
   const intra = intR.status === 'fulfilled' ? rows(intR.value, 1) : [];
-  if (!eod.length && !intra.length) throw new Error('PSX: no usable rows');
+  if (!eod.length && !intra.length) {
+    const why = [eodR, intR].map(r => r.reason?.message).filter(Boolean).join('; ');
+    throw new Error(`PSX: no usable rows${why ? ` (${why})` : ''}`);
+  }
 
   const lastTick = intra[intra.length - 1] ?? null;
   const lastEod = eod[eod.length - 1] ?? null;
@@ -134,3 +203,5 @@ module.exports = async function handler(req, res) {
     ...(debug ? { attempts } : {}),
   });
 };
+
+module.exports.extractToken = extractToken;
