@@ -509,6 +509,18 @@ function linearForecast(history, daysAhead) {
   return { value: Math.max(0, value), slopePerDay: slope };
 }
 
+// Days since the last recorded point of an item's history
+function staleDays(item) {
+  const last = item.history?.[item.history.length - 1]?.[0];
+  if (!last) return null;
+  return Math.floor((Date.parse(karachiToday()) - Date.parse(last)) / 86400000);
+}
+
+const fmtShortDate = ymd => new Date(ymd + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+const STALE_DAYS = 14;    // tile shows "as of <date>"
+const FORECAST_MAX_AGE = 21; // no forecast from data older than this
+
 function renderPakCom(data) {
   if (!data?.sections?.length) { showError('pakcom-content', 'No rates available'); return; }
   pakcomData = data;
@@ -528,6 +540,9 @@ function renderPakCom(data) {
             <span class="pakcom-unit">${esc(i.unit || '')}</span>
             ${fmtDeltaBadge(delta, { invert: true })}
           </div>
+          ${!i.liveNow && staleDays(i) > STALE_DAYS
+            ? `<div class="pakcom-stale">as of ${esc(fmtShortDate(i.history[i.history.length - 1][0]))}</div>`
+            : ''}
         </button>`;
       }).join('')}
     </div>
@@ -633,7 +648,8 @@ function openChart(si, ii) {
   const item = pakcomData?.sections?.[si]?.items?.[ii];
   if (!item?.history?.length) return;
 
-  const fc = linearForecast(item.history, 30);
+  const age = item.liveNow ? 0 : staleDays(item);
+  const fc = age != null && age > FORECAST_MAX_AGE ? null : linearForecast(item.history, 30);
   el('chartTitle').textContent = item.name;
   el('chartSub').textContent = `${item.unit} · current ${fmtPKR(item.rate)}`;
   el('chartBody').innerHTML = lineChartSVG(item.history, fc, item.liveNow);
@@ -644,6 +660,10 @@ function openChart(si, ii) {
     el('chartForecast').innerHTML =
       `<strong>30-day forecast:</strong> ${dir}` +
       `<span class="chart-caveat">Simple trend projection from recorded history — not financial advice.</span>`;
+  } else if (age != null && age > FORECAST_MAX_AGE) {
+    el('chartForecast').innerHTML =
+      `<span class="chart-caveat">No new price recorded since ${esc(fmtShortDate(item.history[item.history.length - 1][0]))} (${age} days) — ` +
+      'a forecast from data this old would be misleading, so none is shown.</span>';
   } else {
     el('chartForecast').innerHTML = '<span class="chart-caveat">Not enough history for a forecast yet.</span>';
   }

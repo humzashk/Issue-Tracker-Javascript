@@ -668,6 +668,7 @@ img { max-width: 100%; }
 .pakcom-rate { margin-top: 2px; font-size: 1rem; font-weight: 750; font-variant-numeric: tabular-nums; }
 .pakcom-foot { display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; font-size: 0.68rem; }
 .pakcom-unit { color: var(--text-3); }
+.pakcom-stale { margin-top: 3px; font-size: 0.64rem; color: var(--yellow); opacity: 0.85; }
 
 /* ── Prayer times ───────────────────────────────────────────────────────── */
 .prayer-next {
