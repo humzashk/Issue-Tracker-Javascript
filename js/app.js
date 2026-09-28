@@ -565,44 +565,62 @@ const CHART_GAP_DAYS = 10;
 // Stepped (notified) prices hold until the next revision; fortnightly
 // revisions leave up to ~16 days between points, which isn't missing data.
 const STEP_GAP_DAYS = 17;
-const DENSE_POINTS = 40; // above this, only the latest point gets a dot
+const DENSE_POINTS = 40; // above this many visible points, only the latest gets a dot
 
-function lineChartSVG(history, forecast, liveNow, { stepped = false, completeFrom = null } = {}) {
-  const W = 560, H = 220, PAD = 34;
-  const pts = history.map(h => ({ t: new Date(h[0]).getTime(), v: h[1] }));
-  const fT = forecast ? pts[pts.length - 1].t + 30 * 86400000 : null;
-  const allV = pts.map(p => p.v).concat(forecast ? [forecast.value] : []);
-  const allT = pts.map(p => p.t).concat(fT ? [fT] : []);
-  const minV = Math.min(...allV) * 0.97, maxV = Math.max(...allV) * 1.03;
-  const minT = Math.min(...allT), maxT = Math.max(...allT);
-  const x = t => PAD + ((t - minT) / (maxT - minT || 1)) * (W - PAD * 2);
-  const y = v => H - PAD - ((v - minV) / (maxV - minV || 1)) * (H - PAD * 2);
+const DAY = 86400000;
+const CHART_PAD = 34; // width/height follow the dialog so text stays legible on phones
+const MIN_SPAN = 7 * DAY; // deepest zoom
+const ZOOM_RANGES = [['1M', 30], ['3M', 91], ['6M', 182], ['1Y', 365], ['All', Infinity]];
 
+let chart = null; // state of the open chart: points, forecast, visible window
+
+// gapAfter[i]: the stretch from point i to i+1 is missing data, not a held price
+function chartGaps(pts, stepped, completeFrom) {
+  const from = completeFrom ? Date.parse(completeFrom) : Infinity;
+  return pts.map((p, i) => {
+    const next = pts[i + 1];
+    if (!next) return false;
+    // within a verified complete list there are no gaps, only unchanged prices
+    const maxGap = p.t >= from ? Infinity : stepped ? STEP_GAP_DAYS : CHART_GAP_DAYS;
+    return (next.t - p.t) / DAY > maxGap;
+  });
+}
+
+function lineChartSVG(c) {
+  const { W, H } = c, PAD = CHART_PAD;
+  const { pts, gapAfter, fc, fT, stepped, liveNow } = c;
+  const [t0, t1] = c.view;
   const last = pts[pts.length - 1];
-  const DAY = 86400000;
 
-  // Build one polyline per run of closely-spaced points; a run breaks (and
-  // gets bridged with a dashed "gap" line) wherever two real points are more
-  // than CHART_GAP_DAYS apart.
-  const segments = [];
-  let current = [pts[0]];
+  // y-scale from what's visible: points in the window plus the price in force
+  // at its left edge (and, for sloped lines, the point just past the right edge)
+  const lo = Math.max(0, pts.findLastIndex(p => p.t <= t0));
+  let hi = stepped ? pts.findLastIndex(p => p.t <= t1) : pts.findIndex(p => p.t >= t1);
+  if (hi < 0) hi = pts.length - 1;
+  const vals = pts.slice(lo, hi + 1).map(p => p.v);
+  if (fc && fT > t0 && last.t < t1) vals.push(fc.value);
+  const vMin = Math.min(...vals), vMax = Math.max(...vals);
+  const vPad = Math.max((vMax - vMin) * 0.12, vMax * 0.01);
+  const minV = vMin - vPad, maxV = vMax + vPad;
+
+  const x = t => PAD + ((t - t0) / (t1 - t0 || 1)) * (W - PAD * 2);
+  const y = v => H - PAD - ((v - minV) / (maxV - minV || 1)) * (H - PAD * 2);
+  const xy = p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
+  const inView = t => t >= t0 && t <= t1;
+
+  // one polyline per run of points; runs break (bridged by a dashed "gap"
+  // line) wherever data is missing
+  const segments = [[pts[0]]];
   const gapLines = [];
   for (let i = 1; i < pts.length; i++) {
-    const gapDays = (pts[i].t - pts[i - 1].t) / DAY;
-    // within a verified complete list there are no gaps, only unchanged prices
-    const inComplete = completeFrom && pts[i - 1].t >= Date.parse(completeFrom);
-    const maxGap = inComplete ? Infinity : stepped ? STEP_GAP_DAYS : CHART_GAP_DAYS;
-    if (gapDays > maxGap) {
-      segments.push(current);
-      gapLines.push([pts[i - 1], pts[i], Math.round(gapDays)]);
-      current = [pts[i]];
+    if (gapAfter[i - 1]) {
+      gapLines.push([pts[i - 1], pts[i], Math.round((pts[i].t - pts[i - 1].t) / DAY)]);
+      segments.push([pts[i]]);
     } else {
-      current.push(pts[i]);
+      segments[segments.length - 1].push(pts[i]);
     }
   }
-  segments.push(current);
 
-  const xy = p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
   const solidLines = segments
     .filter(seg => seg.length > 1)
     .map(seg => {
@@ -614,10 +632,13 @@ function lineChartSVG(history, forecast, liveNow, { stepped = false, completeFro
     })
     .join('');
 
-  const dashedLines = gapLines.map(([a, b, days]) => `
-    <line x1="${x(a.t).toFixed(1)}" y1="${y(a.v).toFixed(1)}" x2="${x(b.t).toFixed(1)}" y2="${y(b.v).toFixed(1)}" class="chart-gap-line"/>
-    <text x="${((x(a.t) + x(b.t)) / 2).toFixed(1)}" y="${(Math.min(y(a.v), y(b.v)) - 8).toFixed(1)}" class="chart-axis chart-gap-label" text-anchor="middle">${days}d gap</text>
-  `).join('');
+  const dashedLines = gapLines.map(([a, b, days]) => {
+    const mid = (a.t + b.t) / 2;
+    return `<line x1="${x(a.t).toFixed(1)}" y1="${y(a.v).toFixed(1)}" x2="${x(b.t).toFixed(1)}" y2="${y(b.v).toFixed(1)}" class="chart-gap-line"/>` +
+      (inView(mid)
+        ? `<text x="${x(mid).toFixed(1)}" y="${(Math.min(y(a.v), y(b.v)) - 8).toFixed(1)}" class="chart-axis chart-gap-label" text-anchor="middle">${days}d gap</text>`
+        : '');
+  }).join('');
 
   const gridLines = [0, 0.5, 1].map(f => {
     const v = minV + (maxV - minV) * f;
@@ -626,41 +647,238 @@ function lineChartSVG(history, forecast, liveNow, { stepped = false, completeFro
   }).join('');
 
   // add the year once the span is long enough for "16 Sept" to be ambiguous
-  const dateFmt = last.t - pts[0].t > 300 * DAY ? { month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' };
-  const dateLabels = [pts[0], last].map(p =>
-    `<text x="${x(p.t)}" y="${H - 10}" class="chart-axis" text-anchor="middle">${new Date(p.t).toLocaleDateString('en-GB', dateFmt)}</text>`
+  const dateFmt = t1 - t0 > 300 * DAY
+    ? { month: 'short', year: 'numeric', timeZone: 'UTC' }
+    : { day: 'numeric', month: 'short', timeZone: 'UTC' };
+  const dateLabels = [t0, (t0 + t1) / 2, t1].map(t =>
+    `<text x="${x(t)}" y="${H - 10}" class="chart-axis" text-anchor="middle">${new Date(t).toLocaleDateString('en-GB', dateFmt)}</text>`
   ).join('');
 
-  const forecastLine = forecast
-    ? `<line x1="${x(last.t)}" y1="${y(last.v)}" x2="${x(fT)}" y2="${y(forecast.value)}" class="chart-forecast-line"/>
-       <circle cx="${x(fT)}" cy="${y(forecast.value)}" r="4" class="chart-forecast-dot"/>
-       <text x="${x(fT) - 6}" y="${y(forecast.value) - 10}" class="chart-axis" text-anchor="end">${Math.round(forecast.value)}</text>`
+  const forecastLine = fc
+    ? `<line x1="${x(last.t)}" y1="${y(last.v)}" x2="${x(fT)}" y2="${y(fc.value)}" class="chart-forecast-line"/>
+       <circle cx="${x(fT)}" cy="${y(fc.value)}" r="4" class="chart-forecast-dot"/>` +
+      (inView(fT) ? `<text x="${x(fT) - 6}" y="${y(fc.value) - 10}" class="chart-axis" text-anchor="end">${Math.round(fc.value)}</text>` : '')
     : '';
 
-  const dense = pts.length > DENSE_POINTS;
-  const dots = pts
-    .map((p, i) => {
-      const isLast = i === pts.length - 1;
+  const visible = pts.filter(p => inView(p.t));
+  const dense = visible.length > DENSE_POINTS;
+  const dots = visible
+    .map(p => {
+      const isLast = p === last;
       if (dense && !isLast) return '';
       const cls = isLast && liveNow ? 'chart-dot chart-dot-live' : 'chart-dot';
       return `<circle cx="${x(p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${isLast && liveNow ? 4 : 3}" class="${cls}"/>`;
     })
     .join('');
 
-  const liveLabel = liveNow
+  const liveLabel = liveNow && inView(last.t)
     ? `<text x="${x(last.t).toFixed(1)}" y="${(y(last.v) - 12).toFixed(1)}" class="chart-axis chart-live-label" text-anchor="middle">live now</text>`
     : '';
 
+  c.x = x; c.y = y;
+  c.inv = px => t0 + ((px - PAD) / (W - PAD * 2)) * (t1 - t0);
+
   return `
     <svg class="line-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+      <defs><clipPath id="chartClip"><rect x="${PAD - 5}" y="0" width="${W - PAD * 2 + 10}" height="${H}"/></clipPath></defs>
       ${gridLines}
       ${dateLabels}
-      ${dashedLines}
-      ${solidLines}
-      ${dots}
-      ${liveLabel}
-      ${forecastLine}
+      <g clip-path="url(#chartClip)">
+        ${dashedLines}
+        ${solidLines}
+        ${forecastLine}
+        ${dots}
+        ${liveLabel}
+      </g>
+      <g class="chart-hover" id="chartHover" style="display:none">
+        <line class="chart-hover-line" y1="${PAD - 14}" y2="${H - PAD}"/>
+        <circle class="chart-hover-dot" r="4.5"/>
+      </g>
     </svg>`;
+}
+
+// The rate on a given date: the price in force for stepped (notified) prices,
+// the nearest recorded point otherwise or across missing data, and the trend
+// line beyond the last point.
+function chartValueAt(c, t) {
+  const { pts, gapAfter, stepped, fc, fT } = c;
+  const first = pts[0], last = pts[pts.length - 1];
+  t = Math.round(t / DAY) * DAY;
+  if (t > last.t && fc && t <= fT) {
+    return { t, v: last.v + (fc.value - last.v) * (t - last.t) / (fT - last.t), forecast: true };
+  }
+  if (t >= last.t) return { t: last.t, v: last.v, p: last };
+  if (t <= first.t) return { t: first.t, v: first.v, p: first };
+  const i = pts.findLastIndex(p => p.t <= t);
+  const a = pts[i], b = pts[i + 1];
+  if (stepped && !gapAfter[i]) return { t, v: a.v, p: a };
+  const p = t - a.t <= b.t - t ? a : b;
+  return { t: p.t, v: p.v, p };
+}
+
+function showChartTip(clientX) {
+  const c = chart;
+  const plot = el('chartPlot');
+  const r = plot.getBoundingClientRect();
+  const t = Math.min(c.view[1], Math.max(c.view[0], c.inv(((clientX - r.left) / r.width) * c.W)));
+  const hit = chartValueAt(c, t);
+  const cx = c.x(hit.t), cy = c.y(hit.v);
+  const hover = el('chartHover');
+  if (!hover || cx < CHART_PAD - 5 || cx > c.W - CHART_PAD + 5) { hideChartTip(); return; }
+  hover.style.display = '';
+  hover.querySelector('line').setAttribute('x1', cx);
+  hover.querySelector('line').setAttribute('x2', cx);
+  hover.querySelector('circle').setAttribute('cx', cx);
+  hover.querySelector('circle').setAttribute('cy', cy);
+  hover.classList.toggle('is-forecast', !!hit.forecast);
+
+  const last = c.pts[c.pts.length - 1];
+  const note = hit.forecast ? 'trend projection'
+    : hit.p === last && c.liveNow && hit.t === last.t ? 'live now'
+    : c.stepped && hit.p && hit.p.t !== hit.t ? `price set ${fmtShortDate(hit.p.d)}`
+    : '';
+  const tip = el('chartTip');
+  tip.innerHTML =
+    `<div class="chart-tip-date">${new Date(hit.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}</div>` +
+    `<div class="chart-tip-rate">${hit.forecast ? '~' : ''}${fmtPKR(hit.v)}</div>` +
+    (note ? `<div class="chart-tip-note">${esc(note)}</div>` : '');
+  tip.hidden = false;
+  const px = (cx / c.W) * r.width, py = (cy / c.H) * r.height;
+  const flip = px > r.width * 0.6;
+  tip.style.left = `${flip ? px - tip.offsetWidth - 12 : px + 12}px`;
+  tip.style.top = `${Math.max(0, Math.min(r.height - tip.offsetHeight, py - tip.offsetHeight / 2))}px`;
+}
+
+function hideChartTip() {
+  el('chartTip').hidden = true;
+  const hover = el('chartHover');
+  if (hover) hover.style.display = 'none';
+}
+
+function renderChart() {
+  const w = el('chartPlot').clientWidth || 560;
+  chart.W = Math.round(Math.min(560, Math.max(280, w)));
+  chart.H = chart.W < 460 ? 230 : 220;
+  el('chartSvg').innerHTML = lineChartSVG(chart);
+  const span = chart.view[1] - chart.view[0];
+  const full = chart.full[1] - chart.full[0];
+  el('chartTools').innerHTML =
+    ZOOM_RANGES
+      .filter(([, days]) => days === Infinity || days * DAY < full)
+      .map(([label, days]) => `<button class="chart-range${chart.range === label ? ' active' : ''}" data-range="${label}" data-days="${days}">${label}</button>`)
+      .join('') +
+    `<span class="chart-zoom">
+       <button class="chart-range" data-zoom="out" aria-label="Zoom out" ${span >= full ? 'disabled' : ''}>−</button>
+       <button class="chart-range" data-zoom="in" aria-label="Zoom in" ${span <= MIN_SPAN ? 'disabled' : ''}>+</button>
+     </span>`;
+}
+
+// Move/resize the visible window, kept within the data and the zoom limits
+function setChartView(v0, v1, range = null) {
+  const [f0, f1] = chart.full;
+  let span = Math.min(f1 - f0, Math.max(Math.min(MIN_SPAN, f1 - f0), v1 - v0));
+  const mid = (v0 + v1) / 2;
+  v0 = mid - span / 2;
+  if (v0 < f0) v0 = f0;
+  if (v0 + span > f1) v0 = f1 - span;
+  chart.view = [v0, v0 + span];
+  chart.range = range;
+  renderChart();
+}
+
+// Zoom by `factor` (<1 = in) keeping time `at` under the same spot
+function zoomChart(factor, at = (chart.view[0] + chart.view[1]) / 2) {
+  const [v0, v1] = chart.view;
+  const span = (v1 - v0) * factor;
+  const f = (at - v0) / (v1 - v0);
+  setChartView(at - f * span, at + (1 - f) * span);
+}
+
+function setChartRange(label, days) {
+  const last = chart.pts[chart.pts.length - 1].t;
+  if (days === Infinity) setChartView(chart.full[0], chart.full[1], label);
+  else setChartView(last - days * DAY, chart.full[1], label);
+}
+
+function initChartInteractions() {
+  const plot = el('chartPlot');
+  const ptrs = new Map(); // active pointers → clientX
+  let drag = null, pinch = null;
+  const timeAt = clientX => {
+    const r = plot.getBoundingClientRect();
+    return chart.inv(((clientX - r.left) / r.width) * chart.W);
+  };
+  const plotWidth = () => plot.getBoundingClientRect().width * (chart.W - CHART_PAD * 2) / chart.W;
+
+  plot.addEventListener('pointerdown', e => {
+    if (!chart) return;
+    ptrs.set(e.pointerId, e.clientX);
+    plot.setPointerCapture?.(e.pointerId);
+    if (ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()];
+      pinch = { dist: Math.abs(a - b) || 1, view: [...chart.view], at: timeAt((a + b) / 2) };
+      drag = null;
+      hideChartTip();
+    } else if (e.pointerType === 'mouse') {
+      drag = { x: e.clientX, view: [...chart.view], moved: false };
+    } else {
+      showChartTip(e.clientX);
+    }
+  });
+
+  plot.addEventListener('pointermove', e => {
+    if (!chart) return;
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, e.clientX);
+    if (pinch && ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()];
+      const [v0, v1] = pinch.view;
+      const span = (v1 - v0) * pinch.dist / (Math.abs(a - b) || 1);
+      const f = (pinch.at - v0) / (v1 - v0);
+      setChartView(pinch.at - f * span, pinch.at + (1 - f) * span);
+      return;
+    }
+    if (drag && ptrs.has(e.pointerId)) {
+      const dx = e.clientX - drag.x;
+      if (Math.abs(dx) > 3) drag.moved = true;
+      if (drag.moved) {
+        const shift = -(dx / plotWidth()) * (drag.view[1] - drag.view[0]);
+        plot.classList.add('panning');
+        hideChartTip();
+        setChartView(drag.view[0] + shift, drag.view[1] + shift);
+        return;
+      }
+    }
+    showChartTip(e.clientX);
+  });
+
+  const end = e => {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (drag?.moved && e.type !== 'pointercancel') showChartTip(e.clientX);
+    drag = null;
+    plot.classList.remove('panning');
+  };
+  plot.addEventListener('pointerup', end);
+  plot.addEventListener('pointercancel', end);
+  plot.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !drag) hideChartTip(); });
+
+  plot.addEventListener('wheel', e => {
+    if (!chart) return;
+    e.preventDefault();
+    zoomChart(e.deltaY > 0 ? 1.25 : 0.8, timeAt(e.clientX));
+    showChartTip(e.clientX);
+  }, { passive: false });
+
+  plot.addEventListener('dblclick', () => { if (chart) setChartRange('All', Infinity); });
+  window.addEventListener('resize', () => { if (chart) { hideChartTip(); renderChart(); } });
+
+  el('chartTools').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || !chart) return;
+    hideChartTip();
+    if (b.dataset.zoom) zoomChart(b.dataset.zoom === 'in' ? 0.6 : 1 / 0.6);
+    else setChartRange(b.dataset.range, +b.dataset.days);
+  });
 }
 
 function openChart(si, ii) {
@@ -670,15 +888,28 @@ function openChart(si, ii) {
   const age = item.liveNow ? 0 : staleDays(item);
   // trend from the recent 45 days (plus the price in force when they began),
   // so a long history doesn't drown out the current direction
-  const recentFrom = Date.parse(item.history[item.history.length - 1][0]) - 45 * 86400000;
+  const recentFrom = Date.parse(item.history[item.history.length - 1][0]) - 45 * DAY;
   const firstRecent = item.history.findIndex(h => Date.parse(h[0]) >= recentFrom);
   const recent = item.history.slice(Math.max(0, firstRecent - 1));
   const fc = age != null && age > FORECAST_MAX_AGE ? null : linearForecast(recent, 30);
+
+  const pts = item.history.map(h => ({ t: Date.parse(h[0]), v: h[1], d: h[0] }));
+  const last = pts[pts.length - 1];
+  const fT = fc ? last.t + 30 * DAY : null;
+  const stepped = !!item.stepped;
+  // a single point still gets a few days of width around it
+  const full = [Math.min(pts[0].t, last.t - 3 * DAY), fT ?? Math.max(last.t, pts[0].t + 3 * DAY)];
+  chart = {
+    pts, fc, fT, stepped, liveNow: !!item.liveNow, full,
+    gapAfter: chartGaps(pts, stepped, item.historyFrom ?? null),
+  };
+
   el('chartTitle').textContent = item.name;
   el('chartSub').textContent = `${item.unit} · current ${fmtPKR(item.rate)}` +
     (item.historySource ? ` · history: ${item.historySource}` : '');
-  el('chartBody').innerHTML = lineChartSVG(item.history, fc, item.liveNow,
-    { stepped: !!item.stepped, completeFrom: item.historyFrom ?? null });
+  hideChartTip();
+  el('chartModal').hidden = false; // visible first, so the chart can size to it
+  setChartRange('All', Infinity);
 
   if (fc) {
     const diff = fc.value - item.rate;
@@ -697,7 +928,7 @@ function openChart(si, ii) {
   el('chartModal').hidden = false;
 }
 
-function closeChart() { el('chartModal').hidden = true; }
+function closeChart() { el('chartModal').hidden = true; chart = null; }
 
 // ── PSX KSE-100 ───────────────────────────────────────────────────────────────
 
@@ -1845,12 +2076,17 @@ document.addEventListener('DOMContentLoaded', () => {
   el('zenExit').addEventListener('click', exitZen);
   el('chartClose').addEventListener('click', closeChart);
   el('chartBackdrop').addEventListener('click', closeChart);
+  initChartInteractions();
 
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     const k = e.key.toLowerCase();
+    if (chart && !el('chartModal').hidden && (k === '+' || k === '=' || k === '-')) {
+      zoomChart(k === '-' ? 1 / 0.6 : 0.6);
+      return;
+    }
     const tabKeys = Object.keys(TABS);
     if (k >= '1' && k <= String(tabKeys.length)) switchTab(tabKeys[+k - 1], { scroll: true });
     else if (k === 'r') refreshNow();

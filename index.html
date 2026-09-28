@@ -21,7 +21,7 @@
     <meta property="og:image" content="https://issue-tracker-javascript.vercel.app/icons/icon-512.png">
     <meta name="twitter:card" content="summary">
 
-    <link rel="stylesheet" href="/css/styles.css?v=23">
+    <link rel="stylesheet" href="/css/styles.css?v=24">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
@@ -190,12 +190,17 @@
                 </div>
                 <button class="icon-btn" id="chartClose" aria-label="Close">✕</button>
             </div>
-            <div id="chartBody"></div>
+            <div class="chart-tools" id="chartTools"></div>
+            <div class="chart-plot" id="chartPlot">
+                <div id="chartSvg"></div>
+                <div class="chart-tip" id="chartTip" hidden></div>
+            </div>
+            <div class="chart-hint">Hover or touch for the rate on any date · scroll, pinch or +/− to zoom · drag to move · double-click to reset</div>
             <div class="chart-forecast" id="chartForecast"></div>
         </div>
     </div>
 
-    <script src="/js/app.js?v=29"></script>
+    <script src="/js/app.js?v=30"></script>
     <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
