@@ -37,6 +37,4 @@ Optional:
 - `OMDB_API_KEY` env var — adds IMDb rating + Metascore to movies.
 - **Analytics**: Vercel dashboard → project → **Analytics** → Enable (free). The script is already in the page.
 
-Daily Rates history: a GitHub Action (`.github/workflows/record-daily-rates.yml`) records live petrol/diesel into `data/pak-commodities.json` every night at 22:30 PKT using the repo's built-in token — no setup. Run it manually from the **Actions** tab ("Record daily rates" → Run workflow). Items without a live source show "as of <date>" and get no forecast.
-
 Most endpoints accept `?debug=1` to show which upstream source answered.
