@@ -530,7 +530,8 @@ function renderPakCom(data) {
     <div class="pakcom-grid">
       ${(sec.items ?? []).map((i, ii) => {
         const hist = i.history ?? [];
-        const prev = hist.length > 1 ? hist[hist.length - 2][1] : null;
+        // change vs the previous different price (a repeated price isn't a change)
+        const prev = hist.slice(0, -1).reverse().find(h => h[1] !== i.rate)?.[1] ?? null;
         const delta = prev != null ? i.rate - prev : null;
         return `
         <button class="pakcom-item" data-si="${si}" data-ii="${ii}" title="Chart & 30-day forecast">
@@ -561,8 +562,12 @@ function renderPakCom(data) {
 // dashed "no data recorded" segment instead of a solid trend line, so a
 // sparse or stale series never reads as smooth continuous data.
 const CHART_GAP_DAYS = 10;
+// Stepped (notified) prices hold until the next revision; fortnightly
+// revisions leave up to ~16 days between points, which isn't missing data.
+const STEP_GAP_DAYS = 17;
+const DENSE_POINTS = 40; // above this, only the latest point gets a dot
 
-function lineChartSVG(history, forecast, liveNow) {
+function lineChartSVG(history, forecast, liveNow, { stepped = false, completeFrom = null } = {}) {
   const W = 560, H = 220, PAD = 34;
   const pts = history.map(h => ({ t: new Date(h[0]).getTime(), v: h[1] }));
   const fT = forecast ? pts[pts.length - 1].t + 30 * 86400000 : null;
@@ -584,7 +589,10 @@ function lineChartSVG(history, forecast, liveNow) {
   const gapLines = [];
   for (let i = 1; i < pts.length; i++) {
     const gapDays = (pts[i].t - pts[i - 1].t) / DAY;
-    if (gapDays > CHART_GAP_DAYS) {
+    // within a verified complete list there are no gaps, only unchanged prices
+    const inComplete = completeFrom && pts[i - 1].t >= Date.parse(completeFrom);
+    const maxGap = inComplete ? Infinity : stepped ? STEP_GAP_DAYS : CHART_GAP_DAYS;
+    if (gapDays > maxGap) {
       segments.push(current);
       gapLines.push([pts[i - 1], pts[i], Math.round(gapDays)]);
       current = [pts[i]];
@@ -594,9 +602,16 @@ function lineChartSVG(history, forecast, liveNow) {
   }
   segments.push(current);
 
+  const xy = p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`;
   const solidLines = segments
     .filter(seg => seg.length > 1)
-    .map(seg => `<polyline class="chart-line" points="${seg.map(p => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ')}"/>`)
+    .map(seg => {
+      // steps: hold each price flat until the next revision, then jump
+      const coords = stepped
+        ? seg.flatMap((p, i) => i ? [xy({ t: p.t, v: seg[i - 1].v }), xy(p)] : [xy(p)])
+        : seg.map(xy);
+      return `<polyline class="chart-line" points="${coords.join(' ')}"/>`;
+    })
     .join('');
 
   const dashedLines = gapLines.map(([a, b, days]) => `
@@ -610,8 +625,10 @@ function lineChartSVG(history, forecast, liveNow) {
             <text x="${PAD - 6}" y="${y(v) + 4}" class="chart-axis" text-anchor="end">${Math.round(v)}</text>`;
   }).join('');
 
+  // add the year once the span is long enough for "16 Sept" to be ambiguous
+  const dateFmt = last.t - pts[0].t > 300 * DAY ? { month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' };
   const dateLabels = [pts[0], last].map(p =>
-    `<text x="${x(p.t)}" y="${H - 10}" class="chart-axis" text-anchor="middle">${new Date(p.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</text>`
+    `<text x="${x(p.t)}" y="${H - 10}" class="chart-axis" text-anchor="middle">${new Date(p.t).toLocaleDateString('en-GB', dateFmt)}</text>`
   ).join('');
 
   const forecastLine = forecast
@@ -620,9 +637,11 @@ function lineChartSVG(history, forecast, liveNow) {
        <text x="${x(fT) - 6}" y="${y(forecast.value) - 10}" class="chart-axis" text-anchor="end">${Math.round(forecast.value)}</text>`
     : '';
 
+  const dense = pts.length > DENSE_POINTS;
   const dots = pts
     .map((p, i) => {
       const isLast = i === pts.length - 1;
+      if (dense && !isLast) return '';
       const cls = isLast && liveNow ? 'chart-dot chart-dot-live' : 'chart-dot';
       return `<circle cx="${x(p.t).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${isLast && liveNow ? 4 : 3}" class="${cls}"/>`;
     })
@@ -649,10 +668,17 @@ function openChart(si, ii) {
   if (!item?.history?.length) return;
 
   const age = item.liveNow ? 0 : staleDays(item);
-  const fc = age != null && age > FORECAST_MAX_AGE ? null : linearForecast(item.history, 30);
+  // trend from the recent 45 days (plus the price in force when they began),
+  // so a long history doesn't drown out the current direction
+  const recentFrom = Date.parse(item.history[item.history.length - 1][0]) - 45 * 86400000;
+  const firstRecent = item.history.findIndex(h => Date.parse(h[0]) >= recentFrom);
+  const recent = item.history.slice(Math.max(0, firstRecent - 1));
+  const fc = age != null && age > FORECAST_MAX_AGE ? null : linearForecast(recent, 30);
   el('chartTitle').textContent = item.name;
-  el('chartSub').textContent = `${item.unit} · current ${fmtPKR(item.rate)}`;
-  el('chartBody').innerHTML = lineChartSVG(item.history, fc, item.liveNow);
+  el('chartSub').textContent = `${item.unit} · current ${fmtPKR(item.rate)}` +
+    (item.historySource ? ` · history: ${item.historySource}` : '');
+  el('chartBody').innerHTML = lineChartSVG(item.history, fc, item.liveNow,
+    { stepped: !!item.stepped, completeFrom: item.historyFrom ?? null });
 
   if (fc) {
     const diff = fc.value - item.rate;
