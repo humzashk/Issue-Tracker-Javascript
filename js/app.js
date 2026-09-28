@@ -352,8 +352,8 @@ function renderCommodities(data) {
 
   const goldLive = data.find(c => c.id === 'gold')?.live;
   const note = goldLive
-    ? '<span class="badge-live">●</span>Gold &amp; silver: gold.pk local market (per tola, PKR)'
-    : '<span class="badge-indicative">◆</span>gold.pk unreachable — gold &amp; silver from international spot, converted';
+    ? '<span class="badge-live">●</span>Gold &amp; silver: Pakistani sarafa rate, median of local rate sites · oil: consensus of 3 market feeds'
+    : '<span class="badge-indicative">◆</span>Local rate sites unreachable — gold &amp; silver from international spot, converted';
   const deltaNote = anyDelta ? ' · ▲▼ vs the last day this browser saw' : '';
 
   setHTML('commodities-content', `<div class="list">${items}</div><div class="meta">${note}${deltaNote}</div>`);

@@ -1,36 +1,40 @@
 // Pakistani market commodity rates.
 //
-// Gold & silver come from gold.pk (the Karachi Sarafa / local market rate),
-// NOT from international spot converted to PKR — local rates carry duty and
-// a market premium, so a spot conversion reads several thousand rupees low.
-// Spot is still fetched, but only as a plausibility yardstick for validating
-// what was scraped, and as a clearly-labelled fallback if gold.pk is down.
+// Every price here comes from several independent sources and the card
+// shows the consensus, so one stale or mis-read source can't decide it.
 //
-// Crude oil comes straight from the exchange benchmarks — the prices news
-// wires quote: ICE Brent and NYMEX WTI front-month futures, read from Yahoo
-// Finance's market-data feed (quoted within minutes of the exchange). Each
-// is cross-checked against a second, independent feed (Stooq): within 1.5%
-// the card says "verified"; if the two disagree more than that, the card
-// says so instead of silently picking one. Change is measured against the
-// exchange's previous settlement, not estimated in the browser.
+// Gold & silver (PKR per tola): the local sarafa rate as published by five
+// Pakistani rate sites (gold.pk, HamariWeb, UrduPoint, PakistanGoldPrice,
+// Oraan). Each page is parsed for the 24K per-tola figure, sanity-checked
+// against international spot converted to PKR, and the MEDIAN of the sources
+// that answered is shown. Only if none can be read does the card fall back
+// to the converted international price — and it says so.
 //
-// Add ?debug=1 to any request to see the raw figures from each source.
+// Crude oil (USD/barrel): ICE Brent and NYMEX WTI front-month futures from
+// three feeds — CNBC's quote service (continuous front month, the figure
+// news reports quote), Yahoo Finance and Stooq. The consensus is the
+// median; a feed more than 1.5% away from it is ignored, which is exactly
+// what happens when one feed is still on an expiring contract around a
+// roll date. The daily change comes from the same feed as the price shown.
+//
+// Add ?debug=1 to see every source's raw figure and which ones agreed.
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 const TROY_OZ_PER_TOLA = 0.375; // 1 tola = 11.6638 g = exactly 0.375 troy oz
 
-const GOLD_PK_URLS = [
-  'https://www.gold.pk/',
-  'https://gold.pk/',
-  'https://www.gold.pk/gold-rate-in-pakistan.html',
-  'https://www.gold.pk/karachi-gold-rates.html',
+const GOLD_SOURCES = [
+  { name: 'gold.pk', urls: ['https://gold.pk/', 'https://www.gold.pk/'] },
+  { name: 'HamariWeb', urls: ['https://hamariweb.com/finance/gold_rate/'] },
+  { name: 'UrduPoint', urls: ['https://www.urdupoint.com/business/gold-rates.html'] },
+  { name: 'PakistanGoldPrice', urls: ['https://pakistangoldprice.com/'] },
+  { name: 'Oraan', urls: ['https://www.oraan.com/gold-rate-pakistan-today'] },
 ];
 
 const OIL = [
-  { id: 'oil-brent', name: 'Crude Oil (Brent)', yahoo: 'BZ=F', stooq: 'cb.f', market: 'ICE Brent futures' },
-  { id: 'oil-wti', name: 'Crude Oil (WTI)', yahoo: 'CL=F', stooq: 'cl.f', market: 'NYMEX WTI futures' },
+  { id: 'oil-brent', name: 'Crude Oil (Brent)', cnbc: '@LCO.1', yahoo: 'BZ=F', stooq: 'cb.f', market: 'ICE Brent' },
+  { id: 'oil-wti', name: 'Crude Oil (WTI)', cnbc: '@CL.1', yahoo: 'CL=F', stooq: 'cl.f', market: 'NYMEX WTI' },
 ];
 const OIL_SANE = v => Number.isFinite(v) && v > 10 && v < 400;
 
@@ -154,41 +158,68 @@ function findByRow(rows, metal) {
 // Plausibility guard: a local Pakistani rate sits at or a little above the
 // spot-derived value (duty + market premium) — never far below, never wildly
 // above. Keeps a mis-parse from ever reaching the card.
-function plausible(value, expected) {
+// Pakistani 24K gold trades within a few percent of converted spot; the
+// lower bound also keeps a mis-read 22K figure (~0.92x) out. Silver's local
+// premium varies more, so its band is wider.
+const BANDS = { gold: [0.93, 1.25], silver: [0.85, 1.6] };
+
+function plausible(value, expected, metal = 'gold') {
   if (value == null) return false;
   if (!expected) return value > 0;
-  return value >= expected * 0.80 && value <= expected * 1.90;
+  const [lo, hi] = BANDS[metal];
+  return value >= expected * lo && value <= expected * hi;
 }
 
 function findRate(rows, metal, expected) {
   for (const [name, fn] of [['column', findByColumn], ['row', findByRow]]) {
     const hit = fn(rows, metal);
-    if (hit && plausible(hit.value, expected)) return { ...hit, strategy: name };
+    if (hit && plausible(hit.value, expected, metal)) return { ...hit, strategy: name };
   }
   return null;
 }
 
-async function scrapeGoldPk(expectedGold, expectedSilver) {
-  const tried = [];
-  for (const url of GOLD_PK_URLS) {
+const median = arr => {
+  const a = [...arr].sort((x, y) => x - y);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+
+// Consensus of several readings: median, then drop anything more than `tol`
+// away and take the median of what's left. Returns null if nothing usable.
+function consensus(values, tol) {
+  const v = values.filter(Number.isFinite);
+  if (!v.length) return null;
+  const m0 = median(v);
+  const agree = v.filter(x => Math.abs(x - m0) / m0 <= tol);
+  return { value: median(agree.length ? agree : v), agreeing: agree.length, total: v.length };
+}
+
+async function readGoldSource(src, expectedGold, expectedSilver) {
+  let lastErr = null;
+  for (const url of src.urls) {
     try {
-      const res = await fetchWith(url);
-      const rows = htmlToRows(await res.text());
+      const rows = htmlToRows(await (await fetchWith(url)).text());
       const gold = findRate(rows, 'gold', expectedGold);
       const silver = findRate(rows, 'silver', expectedSilver);
-      tried.push({
-        url,
-        ok: true,
-        rowCount: rows.length,
-        gold: gold ? { value: gold.value, via: gold.how, context: gold.context } : null,
-        silver: silver ? { value: silver.value, via: silver.how, context: silver.context } : null,
-      });
-      if (gold) return { gold, silver, url, tried };
+      if (gold || silver) return { source: src.name, url, gold: gold?.value ?? null, silver: silver?.value ?? null };
+      lastErr = 'no per-tola rate found on page';
     } catch (e) {
-      tried.push({ url, ok: false, error: String(e.message).slice(0, 60) });
+      lastErr = String(e.message).slice(0, 60);
     }
   }
-  return { gold: null, silver: null, url: null, tried };
+  return { source: src.name, gold: null, silver: null, error: lastErr };
+}
+
+async function scrapePakistaniGold(expectedGold, expectedSilver) {
+  const readings = await Promise.all(GOLD_SOURCES.map(s => readGoldSource(s, expectedGold, expectedSilver)));
+  const pick = metal => {
+    const got = readings.filter(r => r[metal] != null);
+    const c = consensus(got.map(r => r[metal]), 0.02);
+    if (!c) return null;
+    const agreeing = got.filter(r => Math.abs(r[metal] - c.value) / c.value <= 0.02).map(r => r.source);
+    return { value: Math.round(c.value), sources: agreeing };
+  };
+  return { gold: pick('gold'), silver: pick('silver'), readings };
 }
 
 // Front-month futures quote with previous settlement and quote time.
@@ -229,29 +260,67 @@ async function stooqQuote(symbol) {
   return { price };
 }
 
-async function oilQuote(o) {
-  const [y, s] = await Promise.allSettled([yahooQuote(o.yahoo), stooqQuote(o.stooq)]);
-  const yq = y.status === 'fulfilled' ? y.value : null;
-  const sq = s.status === 'fulfilled' ? s.value : null;
-  if (!yq && !sq) throw new Error(`${o.name}: no source available`);
+// CNBC's public quote service — continuous front month, as quoted in news.
+const num = x => (x == null ? NaN : parseFloat(String(x).replace(/[,+%]/g, '')));
+let cnbcBatch = null;
+async function cnbcQuotes() {
+  cnbcBatch ??= (async () => {
+    const syms = OIL.map(o => o.cnbc).join('|');
+    const res = await fetchWith(
+      'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol' +
+        `?symbols=${encodeURIComponent(syms)}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1`,
+      7000,
+      'application/json'
+    );
+    const list = (await res.json())?.FormattedQuoteResult?.FormattedQuote ?? [];
+    return Object.fromEntries(list.map(q => [q.symbol, q]));
+  })().finally(() => setTimeout(() => { cnbcBatch = null; }, 0));
+  return cnbcBatch;
+}
 
-  const primary = yq ?? sq;
-  const diff = yq && sq ? Math.abs(yq.price - sq.price) / yq.price : null;
-  const verified = diff != null && diff <= 0.015;
-  const change = yq?.prevClose ? yq.price - yq.prevClose : null;
+async function cnbcQuote(symbol) {
+  const q = (await cnbcQuotes())[symbol];
+  const price = num(q?.last);
+  if (!OIL_SANE(price)) throw new Error('no usable price');
+  const prev = num(q.previous_day_closing);
+  return { price, prevClose: OIL_SANE(prev) ? prev : null, asOf: q.last_time ? Date.parse(q.last_time) || null : null };
+}
+
+async function oilQuote(o) {
+  const feeds = [
+    // priority order when feeds disagree; Yahoo last — its Brent (BZ=F) is a
+    // thinly traded copy that lags, especially around contract roll dates
+    ['CNBC', () => cnbcQuote(o.cnbc)],
+    ['Stooq', () => stooqQuote(o.stooq)],
+    ['Yahoo', () => yahooQuote(o.yahoo)],
+  ];
+  const results = await Promise.allSettled(feeds.map(([, fn]) => fn()));
+  const got = results
+    .map((r, i) => (r.status === 'fulfilled' ? { feed: feeds[i][0], ...r.value } : null))
+    .filter(Boolean);
+  const raw = Object.fromEntries(results.map((r, i) => [feeds[i][0], r.status === 'fulfilled' ? r.value.price : String(r.reason?.message)]));
+  if (!got.length) throw new Error(`${o.name}: no source available`);
+
+  const c = consensus(got.map(g => g.price), 0.015);
+  const agreeing = got.filter(g => Math.abs(g.price - c.value) / c.value <= 0.015);
+  // show the highest-priority agreeing feed, so price and change match
+  const shown = agreeing[0] ?? got[0];
+  const withPrev = (agreeing.length ? agreeing : [shown]).find(g => g.prevClose);
+  const change = withPrev ? shown.price - withPrev.prevClose : null;
+  const verified = agreeing.length >= 2;
 
   return {
     id: o.id,
     name: o.name,
     unit: 'per barrel',
-    price: primary.price,
+    price: shown.price,
     currency: 'USD',
     live: true,
     change,
-    changePct: change != null ? (change / yq.prevClose) * 100 : null,
-    asOf: yq?.asOf ?? null,
-    source: `${o.market}${verified ? ' · verified 2 sources' : diff != null ? ' · sources differ, check' : ''}`,
-    _raw: { yahoo: yq?.price ?? String(y.reason?.message), stooq: sq?.price ?? String(s.reason?.message), diffPct: diff != null ? +(diff * 100).toFixed(2) : null },
+    changePct: change != null ? (change / withPrev.prevClose) * 100 : null,
+    asOf: shown.asOf ?? null,
+    source: `${o.market} · ${verified ? `${agreeing.length} of ${got.length} feeds agree` : got.length > 1 ? 'feeds disagree' : 'single feed'}`,
+    _raw: { ...raw, shown: shown.feed, agreeing: agreeing.map(g => g.feed) },
   };
 }
 
@@ -279,12 +348,14 @@ module.exports = async function handler(req, res) {
   const expectedGold = spotTola(goldOz);
   const expectedSilver = spotTola(silverOz);
 
-  let scraped = { gold: null, silver: null, url: null, tried: [] };
+  let scraped = { gold: null, silver: null, readings: [] };
   try {
-    scraped = await scrapeGoldPk(expectedGold, expectedSilver);
+    scraped = await scrapePakistaniGold(expectedGold, expectedSilver);
   } catch (e) {
-    console.error('gold.pk scrape failed:', e.message);
+    console.error('gold scrape failed:', e.message);
   }
+  const srcLabel = r => `sarafa rate · ${r.sources.length} source${r.sources.length > 1 ? 's' : ''}` +
+    (r.sources.length === 1 ? ` (${r.sources[0]})` : '');
 
   const data = [];
 
@@ -295,7 +366,7 @@ module.exports = async function handler(req, res) {
     price: scraped.gold?.value ?? expectedGold,
     currency: 'PKR',
     live: Boolean(scraped.gold),
-    source: scraped.gold ? 'gold.pk — local market' : 'international spot (converted)',
+    source: scraped.gold ? srcLabel(scraped.gold) : 'international spot, converted (local sites unreachable)',
   });
 
   data.push({
@@ -305,7 +376,7 @@ module.exports = async function handler(req, res) {
     price: scraped.silver?.value ?? expectedSilver,
     currency: 'PKR',
     live: Boolean(scraped.silver),
-    source: scraped.silver ? 'gold.pk — local market' : 'international spot (converted)',
+    source: scraped.silver ? srcLabel(scraped.silver) : 'international spot, converted (local sites unreachable)',
   });
 
   if (copperLb != null && pkr) {
@@ -322,12 +393,11 @@ module.exports = async function handler(req, res) {
     return res.status(502).json({ success: false, message: 'Could not fetch commodity prices' });
   }
 
-  res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1200');
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
   res.json({
     success: true,
     data: usable,
-    goldSource: scraped.gold ? `gold.pk (${scraped.url})` : 'international spot fallback',
-    source: 'gold.pk / ICE & NYMEX futures via Yahoo Finance + Stooq / ExchangeRate API',
+    source: 'Pakistani sarafa rate sites (median) / ICE & NYMEX futures via CNBC, Yahoo, Stooq (consensus) / ExchangeRate API',
     ...(debug
       ? {
           debug: {
@@ -339,7 +409,7 @@ module.exports = async function handler(req, res) {
             acceptWindow: expectedGold
               ? { min: Math.round(expectedGold * 0.8), max: Math.round(expectedGold * 1.9) }
               : null,
-            attempts: scraped.tried,
+            goldReadings: scraped.readings,
             oil: oil.map(o => ({ id: o.id, ...o._raw })),
           },
         }
