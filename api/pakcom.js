@@ -1,103 +1,160 @@
-// Pakistani daily commodities — fuel, energy, meat, grocery, produce.
+// Daily Rates — Karachi prices of everyday essentials.
 //
-// Fuel layer: live multi-source scrape (OGRA, pakfuel.today, petrolrate.pk,
-//             hamariweb, PSO) — first sane result wins.
-// History:    petrol/diesel charts use the full dated price list read live
-//             from public fuel-history pages (api/_fuel-history.js), checked
-//             against today's live price. Nothing is stored.
-// Base layer: data/pak-commodities.json — editable reference source that
-//             also carries per-item price history for graphs and forecasts.
+// Prices & history: Pakistan Bureau of Statistics weekly SPI, Karachi average
+//                   (api/_spi.js) — about a year of official weekly prices,
+//                   read live, nothing stored.
+// Petrol & diesel:  today's notified price scraped live (OGRA, PSO, …) and
+//                   added as today's point on top of the weekly series.
+// Fallback:         data/pak-commodities.json (saved PBS snapshot) if PBS is
+//                   unreachable.
 const fs = require('fs');
 const path = require('path');
 const { getLiveFuel } = require('./_fuel-sources.js');
-const { getFuelHistory } = require('./_fuel-history.js');
+const { getSpiSeries } = require('./_spi.js');
 
 const DATA_PATH = path.join(process.cwd(), 'data', 'pak-commodities.json');
 
-module.exports = async function handler(req, res) {
-  const debug = req.query?.debug === '1';
-  let json;
-  try {
-    const raw = fs.readFileSync(DATA_PATH, 'utf-8');
-    json = JSON.parse(raw);
-  } catch (err) {
-    console.error('pak-commodities.json read failed:', DATA_PATH, err.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Commodity rates are temporarily unavailable',
-      ...(debug ? { debug: { path: DATA_PATH, error: err.message } } : {}),
-    });
-  }
+// What the card shows, mapped to PBS item names (matched on the start of the
+// name, since PBS sometimes tweaks the wording).
+const CATALOG = [
+  { title: 'Fuel & Energy', items: [
+    { name: 'Petrol (Super)', spi: /^petrol super/i, unit: 'PKR/litre' },
+    { name: 'Hi-Speed Diesel', spi: /^hi-?speed diesel/i, unit: 'PKR/litre' },
+    { name: 'LPG cylinder', spi: /^lpg/i, unit: 'PKR/11.67 kg' },
+    { name: 'Electricity (lowest slab)', spi: /^electricity/i, unit: 'PKR/unit' },
+    { name: 'Gas (lowest slab)', spi: /^gas charges/i, unit: 'PKR/MMBtu' },
+  ] },
+  { title: 'Meat, Dairy & Eggs', items: [
+    { name: 'Chicken (live)', spi: /^chicken/i, unit: 'PKR/kg' },
+    { name: 'Beef (with bone)', spi: /^beef/i, unit: 'PKR/kg' },
+    { name: 'Mutton', spi: /^mutton/i, unit: 'PKR/kg' },
+    { name: 'Eggs (farm)', spi: /^eggs/i, unit: 'PKR/dozen' },
+    { name: 'Milk (fresh)', spi: /^milk fresh/i, unit: 'PKR/litre' },
+    { name: 'Dahi', spi: /^curd/i, unit: 'PKR/kg' },
+  ] },
+  { title: 'Grocery Staples', items: [
+    { name: 'Atta (wheat flour)', spi: /^wheat flour/i, unit: 'PKR/20 kg bag' },
+    { name: 'Sugar', spi: /^sugar/i, unit: 'PKR/kg' },
+    { name: 'Cooking Oil', spi: /^cooking oil/i, unit: 'PKR/5 L tin' },
+    { name: 'Ghee', spi: /^vegetable ghee.*1 ?kg/i, unit: 'PKR/kg pouch' },
+    { name: 'Basmati Rice (broken)', spi: /^rice basmati/i, unit: 'PKR/kg' },
+    { name: 'Rice IRRI-6/9', spi: /^rice irri/i, unit: 'PKR/kg' },
+    { name: 'Daal Chana', spi: /^pulse gram/i, unit: 'PKR/kg' },
+    { name: 'Daal Masoor', spi: /^pulse masoor/i, unit: 'PKR/kg' },
+    { name: 'Daal Moong', spi: /^pulse moong/i, unit: 'PKR/kg' },
+    { name: 'Daal Mash', spi: /^pulse mash/i, unit: 'PKR/kg' },
+  ] },
+  { title: 'Vegetables & Fruits', items: [
+    { name: 'Onion', spi: /^onions?\b/i, unit: 'PKR/kg' },
+    { name: 'Tomato', spi: /^tomato/i, unit: 'PKR/kg' },
+    { name: 'Potato', spi: /^potato/i, unit: 'PKR/kg' },
+    { name: 'Garlic', spi: /^garlic/i, unit: 'PKR/kg' },
+    { name: 'Banana', spi: /^bananas?/i, unit: 'PKR/dozen' },
+  ] },
+];
 
-  let liveFuel = false;
-  let fuelSource = null;
-  let historyReport = null;
-  const today = karachiDate();
-  try {
-    const fuelP = getLiveFuel();
-    const histP = getFuelHistory(fuelP.then(f => ({ petrol: f.petrol, diesel: f.diesel })), today)
-      .catch(e => ({ error: e.message }));
-    const fuel = await fuelP;
-    const hist = await histP;
-    historyReport = hist.error
-      ? hist
-      : { petrol: hist.petrol?.url ?? null, diesel: hist.diesel?.url ?? null, pages: hist.report };
-    const energy = json.sections.find(s => /fuel/i.test(s.title));
-    if (energy) {
-      for (const item of energy.items) {
-        const key = /petrol/i.test(item.name) ? 'petrol' : /diesel/i.test(item.name) ? 'diesel' : null;
-        const live = key ? fuel[key] : null;
-        if (live) {
-          const full = hist?.[key];
-          if (full) {
-            // Verified dated list: keep our older points before it starts,
-            // then every official revision from there on.
-            // Capped at about a year so the chart stays readable.
-            const start = full.series[0][0];
-            const from = new Date(Date.parse(today) - 366 * 86400000).toISOString().slice(0, 10);
-            const series = [...(item.history ?? []).filter(p => p[0] < start), ...full.series];
-            const cut = series.findLastIndex(p => p[0] <= from); // price in force on `from`
-            item.history = cut > 0 ? series.slice(cut) : series;
-            item.historySource = new URL(full.url).hostname.replace(/^www\./, '');
-            item.historyFrom = start; // complete list from here on
-          }
-          item.rate = live;
-          item.liveNow = true; // this request scraped it live, right now
-          liveFuel = true;
-          fuelSource = fuel.source;
-          // Extend history with today's live point (in memory only) so the
-          // chart runs up to today instead of stopping at the last saved date.
-          // Fuel prices are notified and hold until the next revision, so the
-          // chart draws them as steps.
-          item.stepped = true;
-          const h = item.history ?? (item.history = []);
-          const last = h[h.length - 1];
-          if (!last || last[0] < today) h.push([today, live]);
-          else if (last[0] === today) last[1] = live;
-        }
+const round2 = v => Math.round(v * 100) / 100;
+
+// weekly annexes (ascending) → card sections with history
+function buildFromSpi(weeks) {
+  return CATALOG.map(sec => ({
+    title: sec.title,
+    items: sec.items.map(def => {
+      const history = [];
+      let latest = null;
+      for (const w of weeks) {
+        const key = Object.keys(w.items).find(k => def.spi.test(k));
+        const row = key && w.items[key];
+        if (!row || !(row.avg > 0)) continue;
+        history.push([w.date, round2(row.avg)]);
+        latest = { ...row, date: w.date };
       }
-    }
-  } catch (e) {
-    console.error('fuel scrape failed:', e.message);
-  }
-
-  res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
-  res.json({
-    success: true,
-    data: {
-      updated: json.updated,
-      liveFuel,
-      sections: json.sections,
-      source: liveFuel
-        ? `Live fuel: ${fuelSource} · other items: reference (${json.updated})`
-        : `Reference rates (${json.updated}) — live fuel sources unreachable`,
-    },
-    source: 'pak-commodities',
-    ...(debug ? { debug: { today, history: historyReport } } : {}),
-  });
-};
+      if (!latest) return null;
+      return {
+        name: def.name,
+        unit: def.unit,
+        rate: round2(latest.avg),
+        asOf: latest.date,
+        ...(latest.min != null && latest.max != null && latest.max > latest.min
+          ? { range: [round2(latest.min), round2(latest.max)] } : {}),
+        history,
+      };
+    }).filter(Boolean),
+  })).filter(s => s.items.length);
+}
 
 // YYYY-MM-DD in Pakistan (UTC+5), not UTC
 function karachiDate() {
   return new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
 }
+
+module.exports = async function handler(req, res) {
+  const debug = req.query?.debug === '1';
+  const today = karachiDate();
+
+  const [spi, fuel] = await Promise.all([
+    getSpiSeries(today).catch(e => ({ weeks: [], report: { error: e.message } })),
+    getLiveFuel().catch(e => ({ error: e.message })),
+  ]);
+
+  let sections, official = false, updated;
+  if (spi.weeks.length >= 2) {
+    sections = buildFromSpi(spi.weeks);
+    official = true;
+    updated = spi.weeks.at(-1).date;
+  } else {
+    try {
+      const json = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+      sections = json.sections;
+      updated = json.updated;
+    } catch (err) {
+      console.error('pak-commodities.json read failed:', err.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Daily rates are temporarily unavailable',
+        ...(debug ? { debug: { spi: spi.report, error: err.message } } : {}),
+      });
+    }
+  }
+
+  // Petrol & diesel: today's live notified price on top of the weekly series
+  let liveFuel = false;
+  for (const sec of sections) {
+    for (const item of sec.items) {
+      const key = /petrol/i.test(item.name) ? 'petrol' : /diesel/i.test(item.name) ? 'diesel' : null;
+      const live = key && fuel?.[key];
+      if (!live) continue;
+      liveFuel = true;
+      item.rate = live;
+      item.liveNow = true;
+      item.asOf = today;
+      delete item.range;
+      const h = item.history ?? (item.history = []);
+      const last = h[h.length - 1];
+      if (!last || last[0] < today) h.push([today, live]);
+      else if (last[0] === today) last[1] = live;
+    }
+  }
+
+  res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=86400');
+  res.json({
+    success: true,
+    data: {
+      updated,
+      official,
+      liveFuel,
+      fuelSource: liveFuel ? fuel.source : null,
+      sections,
+    },
+    source: 'pak-commodities',
+    ...(debug ? {
+      debug: {
+        today,
+        spi: spi.report,
+        fuel: fuel?.error ? fuel : { source: fuel.source, petrol: fuel.petrol, diesel: fuel.diesel },
+      },
+    } : {}),
+  });
+};
+
+module.exports.buildFromSpi = buildFromSpi;

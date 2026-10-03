@@ -487,7 +487,7 @@ function togglePreview(btn) {
 let pakcomData = null;
 
 const SECTION_ICONS = {
-  'Fuel & Energy': '⛽', 'Meat & Poultry': '🍗',
+  'Fuel & Energy': '⛽', 'Meat, Dairy & Eggs': '🍗', 'Meat & Poultry': '🍗',
   'Grocery Staples': '🌾', 'Vegetables & Fruits': '🥬',
 };
 
@@ -530,8 +530,7 @@ function renderPakCom(data) {
     <div class="pakcom-grid">
       ${(sec.items ?? []).map((i, ii) => {
         const hist = i.history ?? [];
-        // change vs the previous different price (a repeated price isn't a change)
-        const prev = hist.slice(0, -1).reverse().find(h => h[1] !== i.rate)?.[1] ?? null;
+        const prev = hist.length > 1 ? hist[hist.length - 2][1] : null; // last week
         const delta = prev != null ? i.rate - prev : null;
         return `
         <button class="pakcom-item" data-si="${si}" data-ii="${ii}" title="Chart & 30-day forecast">
@@ -552,8 +551,11 @@ function renderPakCom(data) {
   setHTML('pakcom-content', `
     ${sections}
     <div class="meta">
-      ${data.liveFuel ? '<span class="badge-live">●</span>Petrol &amp; diesel live' : '<span class="badge-indicative">◆</span>Fuel sources unreachable'}
-      · other items are reference rates (updated ${esc(data.updated || '—')})
+      ${data.official
+        ? `Official Karachi prices · Pakistan Bureau of Statistics, week ended ${esc(fmtShortDate(data.updated))}`
+        : `<span class="badge-indicative">◆</span>PBS unreachable — saved prices from ${esc(fmtShortDate(data.updated || ''))}`}
+      · ${data.liveFuel ? '<span class="badge-live">●</span>petrol &amp; diesel live today' : 'live fuel sources unreachable'}
+      · ▲▼ vs last week
     </div>
   `);
 }
@@ -562,9 +564,8 @@ function renderPakCom(data) {
 // dashed "no data recorded" segment instead of a solid trend line, so a
 // sparse or stale series never reads as smooth continuous data.
 const CHART_GAP_DAYS = 10;
-// Stepped (notified) prices hold until the next revision; fortnightly
-// revisions leave up to ~16 days between points, which isn't missing data.
-const STEP_GAP_DAYS = 17;
+// Weekly series (PBS) are 7 days apart; a skipped holiday week isn't a gap.
+const WEEKLY_GAP_DAYS = 15;
 const DENSE_POINTS = 40; // above this many visible points, only the latest gets a dot
 
 const DAY = 86400000;
@@ -574,28 +575,24 @@ const ZOOM_RANGES = [['1M', 30], ['3M', 91], ['6M', 182], ['1Y', 365], ['All', I
 
 let chart = null; // state of the open chart: points, forecast, visible window
 
-// gapAfter[i]: the stretch from point i to i+1 is missing data, not a held price
-function chartGaps(pts, stepped, completeFrom) {
-  const from = completeFrom ? Date.parse(completeFrom) : Infinity;
-  return pts.map((p, i) => {
-    const next = pts[i + 1];
-    if (!next) return false;
-    // within a verified complete list there are no gaps, only unchanged prices
-    const maxGap = p.t >= from ? Infinity : stepped ? STEP_GAP_DAYS : CHART_GAP_DAYS;
-    return (next.t - p.t) / DAY > maxGap;
-  });
+// gapAfter[i]: the stretch from point i to i+1 is missing data
+function chartGaps(pts) {
+  // weekly data tolerates a skipped week; denser data uses the tighter limit
+  const spacing = pts.length > 2 ? (pts[pts.length - 1].t - pts[0].t) / (pts.length - 1) / DAY : 0;
+  const maxGap = spacing >= 5 ? WEEKLY_GAP_DAYS : CHART_GAP_DAYS;
+  return pts.map((p, i) => pts[i + 1] ? (pts[i + 1].t - p.t) / DAY > maxGap : false);
 }
 
 function lineChartSVG(c) {
   const { W, H } = c, PAD = CHART_PAD;
-  const { pts, gapAfter, fc, fT, stepped, liveNow } = c;
+  const { pts, gapAfter, fc, fT, liveNow } = c;
   const [t0, t1] = c.view;
   const last = pts[pts.length - 1];
 
-  // y-scale from what's visible: points in the window plus the price in force
-  // at its left edge (and, for sloped lines, the point just past the right edge)
+  // y-scale from what's visible: points in the window plus the points just
+  // past each edge (lines run off the edge towards them)
   const lo = Math.max(0, pts.findLastIndex(p => p.t <= t0));
-  let hi = stepped ? pts.findLastIndex(p => p.t <= t1) : pts.findIndex(p => p.t >= t1);
+  let hi = pts.findIndex(p => p.t >= t1);
   if (hi < 0) hi = pts.length - 1;
   const vals = pts.slice(lo, hi + 1).map(p => p.v);
   if (fc && fT > t0 && last.t < t1) vals.push(fc.value);
@@ -623,13 +620,7 @@ function lineChartSVG(c) {
 
   const solidLines = segments
     .filter(seg => seg.length > 1)
-    .map(seg => {
-      // steps: hold each price flat until the next revision, then jump
-      const coords = stepped
-        ? seg.flatMap((p, i) => i ? [xy({ t: p.t, v: seg[i - 1].v }), xy(p)] : [xy(p)])
-        : seg.map(xy);
-      return `<polyline class="chart-line" points="${coords.join(' ')}"/>`;
-    })
+    .map(seg => `<polyline class="chart-line" points="${seg.map(xy).join(' ')}"/>`)
     .join('');
 
   const dashedLines = gapLines.map(([a, b, days]) => {
@@ -697,11 +688,9 @@ function lineChartSVG(c) {
     </svg>`;
 }
 
-// The rate on a given date: the price in force for stepped (notified) prices,
-// the nearest recorded point otherwise or across missing data, and the trend
-// line beyond the last point.
+// The recorded price nearest a date, or the trend line beyond the last point
 function chartValueAt(c, t) {
-  const { pts, gapAfter, stepped, fc, fT } = c;
+  const { pts, fc, fT } = c;
   const first = pts[0], last = pts[pts.length - 1];
   t = Math.round(t / DAY) * DAY;
   if (t > last.t && fc && t <= fT) {
@@ -711,7 +700,6 @@ function chartValueAt(c, t) {
   if (t <= first.t) return { t: first.t, v: first.v, p: first };
   const i = pts.findLastIndex(p => p.t <= t);
   const a = pts[i], b = pts[i + 1];
-  if (stepped && !gapAfter[i]) return { t, v: a.v, p: a };
   const p = t - a.t <= b.t - t ? a : b;
   return { t: p.t, v: p.v, p };
 }
@@ -734,12 +722,12 @@ function showChartTip(clientX) {
 
   const last = c.pts[c.pts.length - 1];
   const note = hit.forecast ? 'trend projection'
-    : hit.p === last && c.liveNow && hit.t === last.t ? 'live now'
-    : c.stepped && hit.p && hit.p.t !== hit.t ? `price set ${fmtShortDate(hit.p.d)}`
+    : hit.p === last && c.liveNow ? 'live today'
+    : c.weekly ? `Karachi avg · week ended ${fmtShortDate(hit.p.d)}`
     : '';
   const tip = el('chartTip');
   tip.innerHTML =
-    `<div class="chart-tip-date">${new Date(hit.t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}</div>` +
+    `<div class="chart-tip-date">${new Date(hit.t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}</div>` +
     `<div class="chart-tip-rate">${hit.forecast ? '~' : ''}${fmtPKR(hit.v)}</div>` +
     (note ? `<div class="chart-tip-note">${esc(note)}</div>` : '');
   tip.hidden = false;
@@ -896,17 +884,17 @@ function openChart(si, ii) {
   const pts = item.history.map(h => ({ t: Date.parse(h[0]), v: h[1], d: h[0] }));
   const last = pts[pts.length - 1];
   const fT = fc ? last.t + 30 * DAY : null;
-  const stepped = !!item.stepped;
   // a single point still gets a few days of width around it
   const full = [Math.min(pts[0].t, last.t - 3 * DAY), fT ?? Math.max(last.t, pts[0].t + 3 * DAY)];
   chart = {
-    pts, fc, fT, stepped, liveNow: !!item.liveNow, full,
-    gapAfter: chartGaps(pts, stepped, item.historyFrom ?? null),
+    pts, fc, fT, liveNow: !!item.liveNow, full, weekly: !!pakcomData.official,
+    gapAfter: chartGaps(pts),
   };
 
   el('chartTitle').textContent = item.name;
-  el('chartSub').textContent = `${item.unit} · current ${fmtPKR(item.rate)}` +
-    (item.historySource ? ` · history: ${item.historySource}` : '');
+  el('chartSub').textContent = `${item.unit} · ${fmtPKR(item.rate)}` +
+    (item.range ? ` · Karachi range ${fmtPKR(item.range[0])}–${fmtPKR(item.range[1])}` : '') +
+    (pakcomData.official ? (item.liveNow ? ' · weekly PBS history + live today' : ' · weekly, PBS') : '');
   hideChartTip();
   el('chartModal').hidden = false; // visible first, so the chart can size to it
   setChartRange('All', Infinity);

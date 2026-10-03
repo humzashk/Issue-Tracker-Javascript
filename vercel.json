@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/pakcom.js": {
-      "includeFiles": "data/**"
+      "includeFiles": "data/**",
+      "maxDuration": 30
     }
   },
   "headers": [
