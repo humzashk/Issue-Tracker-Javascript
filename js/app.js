@@ -47,7 +47,8 @@ function fmtDeltaBadge(delta, { pct = null, invert = false } = {}) {
   const up = rounded > 0;
   const cls = (invert ? !up : up) ? 'positive' : 'negative';
   const arrow = up ? '▲' : '▼';
-  const shown = Math.abs(rounded) % 1 === 0 ? Math.abs(rounded).toFixed(0) : Math.abs(rounded).toFixed(2);
+  const abs = Math.abs(rounded);
+  const shown = abs.toLocaleString('en-US', abs % 1 === 0 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const pctStr = pct != null && Number.isFinite(pct) ? ` (${pct > 0 ? '+' : ''}${pct.toFixed(2)}%)` : '';
   return `<span class="${cls}">${arrow} ${shown}${pctStr}</span>`;
 }
@@ -350,11 +351,14 @@ function renderCommodities(data) {
   `;
   }).join('');
 
-  const goldLive = data.find(c => c.id === 'gold')?.live;
-  const note = goldLive
-    ? '<span class="badge-live">●</span>Gold &amp; silver: Pakistani sarafa rate, median of local rate sites · oil: consensus of 3 market feeds'
-    : '<span class="badge-indicative">◆</span>Local rate sites unreachable — gold &amp; silver from international spot, converted';
-  const deltaNote = anyDelta ? ' · ▲▼ vs the last day this browser saw' : '';
+  const gold = data.find(c => c.id === 'gold');
+  const note = {
+    association: '<span class="badge-live">●</span>Gold &amp; silver: official All-Pakistan Sarafa Association rate (▲▼ vs its previous day)',
+    dealers: '<span class="badge-live">●</span>Gold &amp; silver: sarafa dealer boards (association rate not yet published)',
+  }[gold?.basis] ?? '<span class="badge-indicative">◆</span>Local rates unavailable — gold &amp; silver from international spot, converted';
+  const tracked = data.filter(c => c.change == null).map(c => c.name.split(' ')[0].toLowerCase());
+  const deltaNote = ' · oil: consensus of market feeds' +
+    (anyDelta && tracked.length ? ` · ${esc(tracked.join(', '))} ▲▼ vs the last day this browser saw` : '');
 
   setHTML('commodities-content', `<div class="list">${items}</div><div class="meta">${note}${deltaNote}</div>`);
 }

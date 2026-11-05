@@ -1,47 +1,49 @@
-// Shared multi-source fuel price scraper.
-// Tries each source in order; first one that yields sane values wins.
-// Sanity window keeps a bad regex match from publishing a wrong price.
-const SANE = v => Number.isFinite(v) && v > 150 && v < 600;
+// Today's notified petrol & diesel prices (PKR/litre).
+//
+// Two independent sources, each read with a parser written for its exact
+// page layout:
+//   PSO       — Pakistan State Oil's own price table (Premier = petrol,
+//               Hi-Cetane Diesel = HSD), the official retail price.
+//   BaKhabar  — publishes the notified prices with their effective date.
+// When both answer they must agree (within 0.5%); if they disagree PSO, the
+// official one, wins and the result is flagged. Sites that stopped updating
+// (pakfuel.today stuck in March, petrolrate.pk in June) were removed — a
+// stale source must never be able to supply today's price.
+const SANE = v => Number.isFinite(v) && v > 150 && v < 700;
 
 const UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+const num = s => (s == null ? NaN : parseFloat(String(s).replace(/,/g, '')));
 
 const SOURCES = [
   {
-    name: 'OGRA (official)',
-    url: 'https://www.ogra.org.pk/notified-petroleum-prices',
-    petrol: /(?:premier|motor\s*gasoline|petrol|mogas|pmg)[^]{0,300}?([\d,]{3,6}\.?\d{0,2})/i,
-    diesel: /(?:high\s*speed\s*diesel|hsd|diesel)[^]{0,300}?([\d,]{3,6}\.?\d{0,2})/i,
-  },
-  {
-    name: 'pakfuel.today',
-    url: 'https://pakfuel.today/',
-    petrol: /petrol[^]{0,200}?(?:Rs\.?|PKR)?\s*([\d,]{3,6}\.?\d{0,2})/i,
-    diesel: /(?:high\s*speed\s*)?diesel[^]{0,200}?(?:Rs\.?|PKR)?\s*([\d,]{3,6}\.?\d{0,2})/i,
-  },
-  {
-    name: 'petrolrate.pk',
-    url: 'https://petrolrate.pk/',
-    petrol: /petrol[^]{0,200}?(?:Rs\.?|PKR)?\s*([\d,]{3,6}\.?\d{0,2})/i,
-    diesel: /(?:high\s*speed\s*)?diesel[^]{0,200}?(?:Rs\.?|PKR)?\s*([\d,]{3,6}\.?\d{0,2})/i,
-  },
-  {
-    name: 'hamariweb',
-    url: 'https://hamariweb.com/finance/petroleum_prices/',
-    petrol: /petrol[^]{0,250}?([\d,]{3,6}\.?\d{0,2})/i,
-    diesel: /(?:high\s*speed\s*)?diesel[^]{0,250}?([\d,]{3,6}\.?\d{0,2})/i,
-  },
-  {
     name: 'PSO (official)',
     url: 'https://psopk.com/en/fuels/fuel-prices',
-    petrol: /(?:premier|pmg|petrol)[^]{0,300}?([\d,]{3,6}\.?\d{0,2})/i,
-    diesel: /(?:hsd|diesel)[^]{0,300}?([\d,]{3,6}\.?\d{0,2})/i,
+    parse(html) {
+      const body = html.replace(/<!--[\s\S]*?-->/g, ''); // PSO keeps retired rows commented out
+      const row = re => num(body.match(re)?.[1]);
+      return {
+        petrol: row(/<td>\s*PREMIER[^<]*<\/td>\s*<td>\s*Rs\.?\s*([\d,.]+)\s*\/\s*Ltr/i),
+        diesel: row(/<td>\s*HI-?CETANE DIESEL[^<]*<\/td>\s*<td>\s*Rs\.?\s*([\d,.]+)\s*\/\s*Ltr/i),
+      };
+    },
+  },
+  {
+    name: 'BaKhabar',
+    url: 'https://www.bakhabarpakistan.com/data/fuel-prices/',
+    parse(html) {
+      const card = label => num(html.match(new RegExp(
+        `fp-price-label">\\s*${label}\\s*</span>\\s*<span class="fp-price-value">\\s*Rs\\.?\\s*([\\d,.]+)`, 'i'))?.[1]);
+      const eff = html.match(/<span>\s*Effective\s*<\/span>\s*<strong>([^<]+)<\/strong>/i)?.[1]?.trim() ?? null;
+      return { petrol: card('Petrol'), diesel: card('Diesel'), effective: eff };
+    },
   },
 ];
 
-async function fetchSource(src, timeoutMs) {
+async function fetchSource(src, timeoutMs = 7000) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs || 6000);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(src.url, {
       headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
@@ -49,21 +51,13 @@ async function fetchSource(src, timeoutMs) {
       redirect: 'follow',
     });
     if (!res.ok) return { name: src.name, status: res.status, error: `HTTP ${res.status}` };
-    const html = await res.text();
-
-    const parse = re => {
-      const m = html.match(re);
-      if (!m) return null;
-      const v = parseFloat(m[1].replace(/,/g, ''));
-      return SANE(v) ? v : null;
-    };
-
+    const out = src.parse(await res.text());
     return {
       name: src.name,
       status: res.status,
-      petrol: parse(src.petrol),
-      diesel: parse(src.diesel),
-      bytes: html.length,
+      petrol: SANE(out.petrol) ? out.petrol : null,
+      diesel: SANE(out.diesel) ? out.diesel : null,
+      ...(out.effective ? { effective: out.effective } : {}),
     };
   } catch (e) {
     return { name: src.name, status: 0, error: e.name === 'AbortError' ? 'timeout' : e.message };
@@ -72,15 +66,26 @@ async function fetchSource(src, timeoutMs) {
   }
 }
 
-// Returns { petrol, diesel, source } from the first source with both values,
-// falling back to the first with at least one value.
+// → { petrol, diesel, source, agree, results }
 async function getLiveFuel() {
   const results = await Promise.all(SOURCES.map(s => fetchSource(s)));
-  const full = results.find(r => r.petrol && r.diesel);
-  if (full) return { petrol: full.petrol, diesel: full.diesel, source: full.name, results };
-  const partial = results.find(r => r.petrol || r.diesel);
-  if (partial) return { petrol: partial.petrol ?? null, diesel: partial.diesel ?? null, source: partial.name, results };
-  return { petrol: null, diesel: null, source: null, results };
+  const pick = fuel => {
+    const got = results.filter(r => r[fuel] != null);
+    if (!got.length) return { value: null, from: [] };
+    const [first] = got; // SOURCES order = priority (PSO first)
+    const agreeing = got.filter(r => Math.abs(r[fuel] - first[fuel]) / first[fuel] <= 0.005);
+    return { value: first[fuel], from: agreeing.map(r => r.name), disagree: agreeing.length < got.length };
+  };
+  const petrol = pick('petrol');
+  const diesel = pick('diesel');
+  const names = [...new Set([...petrol.from, ...diesel.from])];
+  return {
+    petrol: petrol.value,
+    diesel: diesel.value,
+    source: names.join(' + ') || null,
+    agree: names.length >= 2 && !petrol.disagree && !diesel.disagree,
+    results,
+  };
 }
 
-module.exports = { getLiveFuel };
+module.exports = { getLiveFuel, SOURCES };

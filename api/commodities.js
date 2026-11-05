@@ -3,12 +3,16 @@
 // Every price here comes from several independent sources and the card
 // shows the consensus, so one stale or mis-read source can't decide it.
 //
-// Gold & silver (PKR per tola): the local sarafa rate as published by five
-// Pakistani rate sites (gold.pk, HamariWeb, UrduPoint, PakistanGoldPrice,
-// Oraan). Each page is parsed for the 24K per-tola figure, sanity-checked
-// against international spot converted to PKR, and the MEDIAN of the sources
-// that answered is shown. Only if none can be read does the card fall back
-// to the converted international price — and it says so.
+// Gold & silver (PKR per tola), in order of preference:
+//   1. The official daily rate of the All-Pakistan Gems & Jewellers Sarafa
+//      Association (APGJSA) — the figure newspapers quote — read from
+//      Business Recorder's market feeds, which carry the association's rate
+//      story every trading day (the feeds keep about three days).
+//   2. If no association rate from the last 3 days: dealer boards — gold.pk
+//      (Karachi) and pakgold.net (Rawalpindi/Islamabad) — median.
+//   3. Last resort: international spot converted to PKR, labelled as such.
+// Every local figure must sit in a plausible band around converted spot,
+// so a mis-read number can never reach the card.
 //
 // Crude oil (USD/barrel): ICE Brent and NYMEX WTI front-month futures from
 // three feeds — CNBC's quote service (continuous front month, the figure
@@ -24,12 +28,9 @@ const UA =
 
 const TROY_OZ_PER_TOLA = 0.375; // 1 tola = 11.6638 g = exactly 0.375 troy oz
 
-const GOLD_SOURCES = [
-  { name: 'gold.pk', urls: ['https://gold.pk/', 'https://www.gold.pk/'] },
-  { name: 'HamariWeb', urls: ['https://hamariweb.com/finance/gold_rate/'] },
-  { name: 'UrduPoint', urls: ['https://www.urdupoint.com/business/gold-rates.html'] },
-  { name: 'PakistanGoldPrice', urls: ['https://pakistangoldprice.com/'] },
-  { name: 'Oraan', urls: ['https://www.oraan.com/gold-rate-pakistan-today'] },
+const BR_FEEDS = [
+  'https://www.brecorder.com/feeds/markets/commodities',
+  'https://www.brecorder.com/feeds/markets',
 ];
 
 const OIL = [
@@ -73,109 +74,169 @@ async function fetchPKRRate() {
   return pkr;
 }
 
-// gold.pk publishes rates in tables where the UNIT lives in the header row
-// and the PURITY in the first cell, so a plain proximity search mis-reads it
-// (the "per 10 gram" header sits as close to a value as "per tola" does).
-// These helpers keep rows and columns intact instead.
-function htmlToRows(html) {
-  const flat = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<\/(tr|table|p|div|li|h\d)>|<br\s*\/?>/gi, '\n')
-    .replace(/<\/(td|th)>/gi, ' | ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&');
+// ── Gold & silver ────────────────────────────────────────────────────────────
 
-  return flat
-    .split('\n')
-    .map(r => r.replace(/[ \t]+/g, ' ').trim())
-    .filter(Boolean);
-}
+const DAY = 86400000;
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const karachiYmd = ms => new Date(ms + 5 * 3600 * 1000).toISOString().slice(0, 10);
+const amount = s => parseInt(String(s).replace(/,/g, ''), 10);
 
-const splitCells = row => row.split('|').map(c => c.trim()).filter(Boolean);
+const decodeXml = s => String(s)
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+  .replace(/&amp;/g, '&');
+const plainText = html => decodeXml(html)
+  .replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 
-function toAmount(cell) {
-  const m = cell.match(/([\d][\d,]{2,12})(?:\.\d+)?/);
-  if (!m) return null;
-  const v = parseInt(m[1].replace(/,/g, ''), 10);
-  return Number.isFinite(v) && v >= 100 ? v : null;
-}
+// One Business Recorder item → { date, gold, silver } if it is an association
+// rate story. These read like:
+//   "…gold price per tola reached Rs435,636 after a gain of Rs9,600 during the day."
+//   "They soared by Rs13,900 to settle at Rs426,036 per tola with … per 10 grams"
+//   "…gold price per tola saw no change at Rs412,136 during the day."
+//   "…the price of silver increased by Rs100 to reach Rs5,763 per tola."
+// and also recap the previous day ("On Wednesday, the gold price per tola
+// reached Rs426,036…") — those sentences are skipped.
+function parseAssociationItem({ description, pubDate, link }) {
+  const text = plainText(description);
+  if (!/sarafa|jewellers association|APGJSA/i.test(text)) return null;
+  const pub = Date.parse(pubDate);
+  if (!Number.isFinite(pub)) return null;
 
-const isTola = t => /\btola\b/i.test(t);
-const isOtherUnit = t => /\d+\s*gram|\bgram\b|\bounce\b|\boz\b|\bmasha\b/i.test(t);
+  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z])/)
+    .filter(x => !/^On (Sun|Mon|Tues|Wednes|Thurs|Fri|Satur)day\b/i.test(x));
 
-// Row label describes the metal (and, for gold, 24K rather than 22/21/18K)
-function labelMatches(label, metal) {
-  const t = label.toLowerCase();
-  if (/phone|call|whatsapp|contact|\+92/.test(t)) return false;
-  if (metal === 'gold') {
-    if (!/gold|karat|carat|\b2[1248]\s*k\b/.test(t)) return false;
-    if (/\b(22|21|18|14|12|10)\s*(k|karat|carat)\b/.test(t)) return false;
-    return true;
-  }
-  return /silver|chandi/.test(t) && !/gold/.test(t);
-}
-
-// Strategy A — table with a unit header row: take the value under "per tola".
-function findByColumn(rows, metal) {
-  let tolaCol = null;
-  for (const row of rows) {
-    const cells = splitCells(row);
-    const idx = cells.findIndex(isTola);
-    if (idx > 0 && cells.every(c => toAmount(c) === null || isTola(c) || isOtherUnit(c))) {
-      tolaCol = idx;
-      continue;
+  let gold = null, silver = null, weekday = null;
+  for (const x of sentences) {
+    if (weekday == null) {
+      const w = x.toLowerCase().match(/\bon (sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+      if (w) weekday = WEEKDAYS.indexOf(w[1]);
     }
-    if (tolaCol == null) continue;
-
-    if (cells.length > tolaCol && labelMatches(cells[0], metal)) {
-      const value = toAmount(cells[tolaCol]);
-      if (value != null) return { value, how: `column ${tolaCol} under a "per tola" header`, context: row.slice(0, 90) };
+    if (gold == null && /per tola/i.test(x) && !/silver/i.test(x)) {
+      const vals = [...x.matchAll(/Rs\.?\s?([\d,]{5,})/g)].map(m => amount(m[1])).filter(v => v >= 50000);
+      if (vals.length) gold = Math.max(...vals); // the rate, not the day's change
+    }
+    if (silver == null && /silver/i.test(x)) {
+      const m = x.match(/Rs\.?\s?([\d,]+)\s*per tola/i);
+      if (m) silver = amount(m[1]);
     }
   }
-  return null;
+  if (gold == null && silver == null) return null;
+
+  // the story is dated by the weekday it names ("…increased on Thursday"),
+  // counted back from when it was published
+  let date = karachiYmd(pub);
+  if (weekday != null) {
+    const pubDow = new Date(Date.parse(date + 'T00:00:00Z')).getUTCDay();
+    date = karachiYmd(pub - ((pubDow - weekday + 7) % 7) * DAY);
+  }
+  return { date, gold, silver, link: link || null };
 }
 
-// Strategy B — the unit word sits in the same row as the number
-// (e.g. "24K Gold Per Tola | Rs 442,300").
-function findByRow(rows, metal) {
-  for (const row of rows) {
-    if (!isTola(row)) continue;
-    const cells = splitCells(row);
-    const label = cells.find(c => toAmount(c) === null) ?? cells[0] ?? '';
-    if (!labelMatches(label + ' ' + row, metal)) continue;
-
-    for (const cell of cells) {
-      if (isOtherUnit(cell) && !isTola(cell)) continue;
-      const value = toAmount(cell);
-      if (value != null) return { value, how: 'same row as the word "tola"', context: row.slice(0, 90) };
+async function getAssociationRates() {
+  const feeds = await Promise.allSettled(BR_FEEDS.map(async u => (await fetchWith(u, 7000, 'application/rss+xml')).text()));
+  const byDate = new Map();
+  for (const f of feeds) {
+    if (f.status !== 'fulfilled') continue;
+    for (const [, item] of f.value.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/g)) {
+      const tag = t => item.match(new RegExp(`<${t}>([\\s\\S]*?)</${t}>`))?.[1] ?? '';
+      const r = parseAssociationItem({ description: tag('description'), pubDate: tag('pubDate'), link: tag('link').trim() });
+      if (!r) continue;
+      const prev = byDate.get(r.date);
+      byDate.set(r.date, { date: r.date, gold: prev?.gold ?? r.gold, silver: prev?.silver ?? r.silver, link: prev?.link ?? r.link });
     }
   }
-  return null;
+  return {
+    rates: [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date)),
+    errors: feeds.filter(f => f.status === 'rejected').map(f => String(f.reason?.message)),
+  };
 }
 
-// Plausibility guard: a local Pakistani rate sits at or a little above the
-// spot-derived value (duty + market premium) — never far below, never wildly
-// above. Keeps a mis-parse from ever reaching the card.
-// Pakistani 24K gold trades within a few percent of converted spot; the
-// lower bound also keeps a mis-read 22K figure (~0.92x) out. Silver's local
-// premium varies more, so its band is wider.
-const BANDS = { gold: [0.93, 1.25], silver: [0.85, 1.6] };
+// Dealer boards, each read with a parser for its exact layout
+const DEALERS = [
+  {
+    name: 'gold.pk',
+    url: 'https://gold.pk/gold-rates-pakistan.php',
+    parse: html => ({
+      gold: amount(html.match(/goldratehome'?"?>\s*Rs\.?\s*([\d,]+)(?:\.\d+)?\s*<\/p>\s*<p>\s*24 Karat Gold Rate\s*<b>\s*\(1 Tola\)/i)?.[1]),
+      silver: NaN,
+    }),
+  },
+  {
+    name: 'pakgold.net',
+    url: 'https://www.pakgold.net/',
+    parse: html => ({
+      gold: amount(html.match(/id="vRawaSell">\s*([\d,]+)/)?.[1]),
+      silver: amount(html.match(/id="vSilverLocalSell">\s*([\d,]+)/)?.[1]),
+    }),
+  },
+];
 
-function plausible(value, expected, metal = 'gold') {
-  if (value == null) return false;
-  if (!expected) return value > 0;
+async function readDealers() {
+  return Promise.all(DEALERS.map(async d => {
+    try {
+      const out = d.parse(await (await fetchWith(d.url)).text());
+      return {
+        source: d.name,
+        gold: Number.isFinite(out.gold) ? out.gold : null,
+        silver: Number.isFinite(out.silver) ? out.silver : null,
+      };
+    } catch (e) {
+      return { source: d.name, gold: null, silver: null, error: String(e.message).slice(0, 60) };
+    }
+  }));
+}
+
+// A local rate sits close to converted spot (duty + market premium): never
+// far below, never wildly above. Silver's local premium varies more.
+const BANDS = { gold: [0.93, 1.12], silver: [0.85, 1.4] };
+function plausible(value, expected, metal) {
+  if (!Number.isFinite(value) || value <= 0) return false;
+  if (!expected) return true;
   const [lo, hi] = BANDS[metal];
   return value >= expected * lo && value <= expected * hi;
 }
 
-function findRate(rows, metal, expected) {
-  for (const [name, fn] of [['column', findByColumn], ['row', findByRow]]) {
-    const hit = fn(rows, metal);
-    if (hit && plausible(hit.value, expected, metal)) return { ...hit, strategy: name };
+const fmtDay = ymd => new Date(ymd + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+// → the card row for one metal, plus how it was decided
+function metalRow(metal, { assoc, dealers, expected, today }) {
+  const base = metal === 'gold'
+    ? { id: 'gold', name: 'Gold (24k)', unit: 'per tola', currency: 'PKR' }
+    : { id: 'silver', name: 'Silver', unit: 'per tola', currency: 'PKR' };
+
+  // 1. association rate, newest day within the last 3
+  const days = assoc.filter(r => plausible(r[metal], expected, metal));
+  const latest = days[0];
+  if (latest && (Date.parse(today) - Date.parse(latest.date)) / DAY <= 3) {
+    const prev = days.find(r => r.date < latest.date);
+    const change = prev ? latest[metal] - prev[metal] : null;
+    return {
+      ...base,
+      price: latest[metal],
+      live: true,
+      basis: 'association',
+      asOfDate: latest.date,
+      ...(change != null ? { change, changePct: (change / prev[metal]) * 100, changeVs: prev.date } : {}),
+      source: `Sarafa Association rate · ${fmtDay(latest.date)}`,
+    };
   }
-  return null;
+
+  // 2. dealer boards
+  const got = dealers.filter(d => plausible(d[metal], expected, metal));
+  if (got.length) {
+    const c = consensus(got.map(d => d[metal]), 0.02);
+    const agreeing = got.filter(d => Math.abs(d[metal] - c.value) / c.value <= 0.02).map(d => d.source);
+    return {
+      ...base,
+      price: Math.round(c.value),
+      live: true,
+      basis: 'dealers',
+      source: `sarafa dealers · ${agreeing.join(', ')}`,
+    };
+  }
+
+  // 3. converted spot
+  return { ...base, price: expected, live: false, basis: 'spot', source: 'international spot, converted (local rates unavailable)' };
 }
 
 const median = arr => {
@@ -192,34 +253,6 @@ function consensus(values, tol) {
   const m0 = median(v);
   const agree = v.filter(x => Math.abs(x - m0) / m0 <= tol);
   return { value: median(agree.length ? agree : v), agreeing: agree.length, total: v.length };
-}
-
-async function readGoldSource(src, expectedGold, expectedSilver) {
-  let lastErr = null;
-  for (const url of src.urls) {
-    try {
-      const rows = htmlToRows(await (await fetchWith(url)).text());
-      const gold = findRate(rows, 'gold', expectedGold);
-      const silver = findRate(rows, 'silver', expectedSilver);
-      if (gold || silver) return { source: src.name, url, gold: gold?.value ?? null, silver: silver?.value ?? null };
-      lastErr = 'no per-tola rate found on page';
-    } catch (e) {
-      lastErr = String(e.message).slice(0, 60);
-    }
-  }
-  return { source: src.name, gold: null, silver: null, error: lastErr };
-}
-
-async function scrapePakistaniGold(expectedGold, expectedSilver) {
-  const readings = await Promise.all(GOLD_SOURCES.map(s => readGoldSource(s, expectedGold, expectedSilver)));
-  const pick = metal => {
-    const got = readings.filter(r => r[metal] != null);
-    const c = consensus(got.map(r => r[metal]), 0.02);
-    if (!c) return null;
-    const agreeing = got.filter(r => Math.abs(r[metal] - c.value) / c.value <= 0.02).map(r => r.source);
-    return { value: Math.round(c.value), sources: agreeing };
-  };
-  return { gold: pick('gold'), silver: pick('silver'), readings };
 }
 
 // Front-month futures quote with previous settlement and quote time.
@@ -348,42 +381,22 @@ module.exports = async function handler(req, res) {
   const expectedGold = spotTola(goldOz);
   const expectedSilver = spotTola(silverOz);
 
-  let scraped = { gold: null, silver: null, readings: [] };
-  try {
-    scraped = await scrapePakistaniGold(expectedGold, expectedSilver);
-  } catch (e) {
-    console.error('gold scrape failed:', e.message);
-  }
-  const srcLabel = r => `sarafa rate · ${r.sources.length} source${r.sources.length > 1 ? 's' : ''}` +
-    (r.sources.length === 1 ? ` (${r.sources[0]})` : '');
+  const today = karachiYmd(Date.now());
+  const [assocR, dealersR] = await Promise.allSettled([getAssociationRates(), readDealers()]);
+  const assoc = assocR.status === 'fulfilled' ? assocR.value : { rates: [], errors: [String(assocR.reason?.message)] };
+  const dealers = dealersR.status === 'fulfilled' ? dealersR.value : [];
+  const ctx = { assoc: assoc.rates, dealers, today };
 
-  const data = [];
-
-  data.push({
-    id: 'gold',
-    name: 'Gold (24k)',
-    unit: 'per tola',
-    price: scraped.gold?.value ?? expectedGold,
-    currency: 'PKR',
-    live: Boolean(scraped.gold),
-    source: scraped.gold ? srcLabel(scraped.gold) : 'international spot, converted (local sites unreachable)',
-  });
-
-  data.push({
-    id: 'silver',
-    name: 'Silver',
-    unit: 'per tola',
-    price: scraped.silver?.value ?? expectedSilver,
-    currency: 'PKR',
-    live: Boolean(scraped.silver),
-    source: scraped.silver ? srcLabel(scraped.silver) : 'international spot, converted (local sites unreachable)',
-  });
+  const data = [
+    metalRow('gold', { ...ctx, expected: expectedGold }),
+    metalRow('silver', { ...ctx, expected: expectedSilver }),
+  ];
 
   if (copperLb != null && pkr) {
     data.push({
       id: 'copper', name: 'Copper', unit: 'per pound',
       price: Math.round(copperLb * pkr), currency: 'PKR',
-      live: true, source: 'LME spot (converted)',
+      live: true, source: 'COMEX copper, converted',
     });
   }
   for (const { _raw, ...o } of oil) data.push(o);
@@ -397,7 +410,7 @@ module.exports = async function handler(req, res) {
   res.json({
     success: true,
     data: usable,
-    source: 'Pakistani sarafa rate sites (median) / ICE & NYMEX futures via CNBC, Yahoo, Stooq (consensus) / ExchangeRate API',
+    source: 'APGJSA sarafa rate via Business Recorder (fallback: gold.pk, pakgold.net) / ICE & NYMEX futures via CNBC, Yahoo, Stooq (consensus) / ExchangeRate API',
     ...(debug
       ? {
           debug: {
@@ -406,10 +419,9 @@ module.exports = async function handler(req, res) {
             spotSilverUsdPerOz: silverOz,
             expectedGoldTolaFromSpot: expectedGold,
             expectedSilverTolaFromSpot: expectedSilver,
-            acceptWindow: expectedGold
-              ? { min: Math.round(expectedGold * 0.8), max: Math.round(expectedGold * 1.9) }
-              : null,
-            goldReadings: scraped.readings,
+            bands: BANDS,
+            association: assoc,
+            dealers,
             oil: oil.map(o => ({ id: o.id, ...o._raw })),
           },
         }
@@ -418,3 +430,6 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.oilQuote = oilQuote;
+module.exports.parseAssociationItem = parseAssociationItem;
+module.exports.DEALERS = DEALERS;
+module.exports.metalRow = metalRow;

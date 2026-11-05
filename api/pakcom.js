@@ -119,11 +119,19 @@ module.exports = async function handler(req, res) {
 
   // Petrol & diesel: today's live notified price on top of the weekly series
   let liveFuel = false;
+  const fuelRejected = [];
   for (const sec of sections) {
     for (const item of sec.items) {
       const key = /petrol/i.test(item.name) ? 'petrol' : /diesel/i.test(item.name) ? 'diesel' : null;
       const live = key && fuel?.[key];
       if (!live) continue;
+      // never let a mis-read live price through: it must be within 20% of
+      // PBS's latest weekly price for the same fuel
+      const weekly = item.history?.at(-1)?.[1];
+      if (weekly && Math.abs(live - weekly) / weekly > 0.2) {
+        fuelRejected.push({ fuel: key, live, weekly });
+        continue;
+      }
       liveFuel = true;
       item.rate = live;
       item.liveNow = true;
@@ -151,7 +159,8 @@ module.exports = async function handler(req, res) {
       debug: {
         today,
         spi: spi.report,
-        fuel: fuel?.error ? fuel : { source: fuel.source, petrol: fuel.petrol, diesel: fuel.diesel },
+        fuel: fuel?.error ? fuel : { source: fuel.source, agree: fuel.agree, petrol: fuel.petrol, diesel: fuel.diesel, results: fuel.results },
+        fuelRejected,
       },
     } : {}),
   });
