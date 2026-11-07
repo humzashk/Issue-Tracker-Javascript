@@ -558,7 +558,9 @@ function renderPakCom(data) {
       ${data.official
         ? `Official Karachi prices · Pakistan Bureau of Statistics, week ended ${esc(fmtShortDate(data.updated))}`
         : `<span class="badge-indicative">◆</span>PBS unreachable — saved prices from ${esc(fmtShortDate(data.updated || ''))}`}
-      · ${data.liveFuel ? '<span class="badge-live">●</span>petrol &amp; diesel live today' : 'live fuel sources unreachable'}
+      · ${data.liveFuel
+        ? `<span class="badge-live">●</span>petrol &amp; diesel live${data.fuelEffective ? ` (notified price from ${esc(fmtShortDate(data.fuelEffective))})` : ' today'}`
+        : 'live fuel sources unreachable'}
       · ▲▼ vs last week
     </div>
   `);

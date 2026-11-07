@@ -3,8 +3,10 @@
 // Prices & history: Pakistan Bureau of Statistics weekly SPI, Karachi average
 //                   (api/_spi.js) — about a year of official weekly prices,
 //                   read live, nothing stored.
-// Petrol & diesel:  today's notified price scraped live (OGRA, PSO, …) and
-//                   added as today's point on top of the weekly series.
+// Petrol & diesel:  today's notified price (newest effective date across
+//                   BaKhabar, OilPrices.pk, Vital, Mashriq, PSO — see
+//                   _fuel-sources.js) added as today's point on top of the
+//                   weekly series.
 // Fallback:         data/pak-commodities.json (saved PBS snapshot) if PBS is
 //                   unreachable.
 const fs = require('fs');
@@ -94,7 +96,7 @@ module.exports = async function handler(req, res) {
 
   const [spi, fuel] = await Promise.all([
     getSpiSeries(today).catch(e => ({ weeks: [], report: { error: e.message } })),
-    getLiveFuel().catch(e => ({ error: e.message })),
+    getLiveFuel(today).catch(e => ({ error: e.message })),
   ]);
 
   let sections, official = false, updated;
@@ -152,6 +154,7 @@ module.exports = async function handler(req, res) {
       official,
       liveFuel,
       fuelSource: liveFuel ? fuel.source : null,
+      fuelEffective: liveFuel ? fuel.effective : null,
       sections,
     },
     source: 'pak-commodities',
@@ -159,7 +162,7 @@ module.exports = async function handler(req, res) {
       debug: {
         today,
         spi: spi.report,
-        fuel: fuel?.error ? fuel : { source: fuel.source, agree: fuel.agree, petrol: fuel.petrol, diesel: fuel.diesel, results: fuel.results },
+        fuel: fuel?.error ? fuel : { source: fuel.source, agree: fuel.agree, effective: fuel.effective, petrol: fuel.petrol, diesel: fuel.diesel, results: fuel.results },
         fuelRejected,
       },
     } : {}),

@@ -13,6 +13,7 @@ const zlib = require('zlib');
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 const BASE = 'https://www.pbs.gov.pk/wp-content/uploads/2020/07/';
+const POST = 'https://www.pbs.gov.pk/weekly-sensitive-price-indicator-spi-for-the-week-ended-on-';
 const CITY = /^karachi\b/i;
 const WEEKS = 52;
 
@@ -150,16 +151,28 @@ const pad = n => String(n).padStart(2, '0');
 const ddmmyyyy = t => { const d = new Date(t); return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`; };
 const ymd = t => new Date(t).toISOString().slice(0, 10);
 
-async function fetchAnnex(dateStr) {
+async function getBuf(url, ms = 8000) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
+  const timer = setTimeout(() => ctrl.abort(), ms);
   try {
-    const res = await fetch(`${BASE}Annex_${dateStr}.xlsx`, { headers: { 'User-Agent': UA }, signal: ctrl.signal });
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: ctrl.signal });
     if (!res.ok) return { status: res.status };
     return { status: 200, buf: Buffer.from(await res.arrayBuffer()) };
   } finally {
     clearTimeout(timer);
   }
+}
+
+// The annex normally sits at a predictable URL. For recent weeks, if it isn't
+// there, read that week's PBS announcement page and follow its Excel annex
+// link instead — so a renamed file doesn't stop the card from updating.
+async function fetchAnnex(dateStr, viaPost) {
+  const direct = await getBuf(`${BASE}Annex_${dateStr}.xlsx`);
+  if (direct.buf || !viaPost) return direct;
+  const post = await getBuf(`${POST}${dateStr.replace(/\./g, '-')}/`);
+  if (!post.buf) return direct;
+  const href = post.buf.toString('utf8').match(/href="([^"]*annex[^"]*\.xlsx)"/i)?.[1];
+  return href ? getBuf(new URL(href, POST).href) : direct;
 }
 
 // The SPI week ends on Thursday; a holiday can move a release a day earlier.
@@ -188,12 +201,12 @@ async function getSpiSeries(today) {
   if (Date.now() - missCache.at > 3 * 3600 * 1000) missCache = { at: Date.now(), misses: new Set() };
   const thursdays = recentThursdays(today, WEEKS);
   const report = [];
-  const weeks = await pool(thursdays, 8, async t => {
+  const weeks = await pool(thursdays.map((t, i) => ({ t, recent: i < 3 })), 8, async ({ t, recent }) => {
     for (const day of [t, t - 86400000]) { // Thursday, else Wednesday
       const key = ddmmyyyy(day);
       if (weekCache.has(key)) return { date: ymd(day), items: weekCache.get(key) };
       if (missCache.misses.has(key)) continue;
-      const r = await fetchAnnex(key);
+      const r = await fetchAnnex(key, recent);
       if (r.buf) {
         try {
           const items = parseAnnex(r.buf);
@@ -212,4 +225,4 @@ async function getSpiSeries(today) {
   return { weeks: found, report: { weeksFound: found.length, latest: found.at(-1)?.date ?? null, errors: report } };
 }
 
-module.exports = { getSpiSeries, parseAnnex, readSheet, recentThursdays };
+module.exports = { getSpiSeries, parseAnnex, readSheet, recentThursdays, fetchAnnex };
