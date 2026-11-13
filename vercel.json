@@ -3,6 +3,10 @@
     "api/pakcom.js": {
       "includeFiles": "data/**",
       "maxDuration": 30
+    },
+    "api/utilities.js": {
+      "includeFiles": "{data/**,node_modules/unpdf/dist/**}",
+      "maxDuration": 30
     }
   },
   "headers": [

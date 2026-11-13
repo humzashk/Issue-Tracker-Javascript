@@ -21,7 +21,7 @@
     <meta property="og:image" content="https://issue-tracker-javascript.vercel.app/icons/icon-512.png">
     <meta name="twitter:card" content="summary">
 
-    <link rel="stylesheet" href="/css/styles.css?v=25">
+    <link rel="stylesheet" href="/css/styles.css?v=26">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
@@ -149,6 +149,11 @@
                 <header class="card-head"><span class="card-badge">🌤️</span><h2>Weather</h2><span class="card-note">7 days</span></header>
                 <div class="card-body" id="weather-content"></div>
             </article>
+
+            <article class="card span-3" id="card-utilities">
+                <header class="card-head"><span class="card-badge">⚡</span><h2>Power &amp; Gas</h2><span class="card-note">Load-shedding</span></header>
+                <div class="card-body" id="utilities-content"></div>
+            </article>
         </section>
 
         <!-- ── Entertainment ───────────────────────────────────────────── -->
@@ -207,7 +212,28 @@
         </div>
     </div>
 
-    <script src="/js/app.js?v=34"></script>
+    <div class="chart-modal" id="basketModal" hidden>
+        <div class="chart-backdrop" id="basketBackdrop"></div>
+        <div class="chart-dialog basket-dialog" role="dialog" aria-modal="true">
+            <div class="chart-head">
+                <div>
+                    <div class="chart-title">Your monthly basket</div>
+                    <div class="chart-sub">How much of each item your household uses in a month. Saved on this device only.</div>
+                </div>
+                <button class="icon-btn" id="basketClose" aria-label="Close">✕</button>
+            </div>
+            <div class="basket-body" id="basketBody"></div>
+            <div class="basket-foot">
+                <div id="basketTotal"></div>
+                <div class="basket-actions">
+                    <button class="link-btn" id="basketReset">Reset to typical family</button>
+                    <button class="btn-primary" id="basketSave">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/app.js?v=35"></script>
     <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

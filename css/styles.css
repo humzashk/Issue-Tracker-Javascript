@@ -653,6 +653,54 @@ img { max-width: 100%; }
 /* ── Pakistan tab: currency + calculators stacked beside Daily Rates ─────── */
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
+/* ── Gold karats under the 24K row ──────────────────────────────────────── */
+.karat-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: -4px 0 8px 37px; font-size: 0.76rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.karat-row em { font-style: normal; font-weight: 700; color: var(--text-3); margin-right: 2px; }
+.karat-row small { font-size: 0.68rem; color: var(--text-3); }
+
+/* ── Ramadan strip in the prayer card ───────────────────────────────────── */
+.ramadan { border-radius: 12px; font-size: 0.78rem; color: var(--text-2); }
+.ramadan.soon { margin-top: 12px; padding: 8px 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.ramadan.soon b { color: var(--text); }
+.ramadan.soon span { color: var(--text-3); }
+.ramadan.fast { margin-bottom: 12px; padding: 12px 14px; background: var(--accent-soft); border: 1px solid var(--accent); }
+.ramadan-label { font-size: 0.7rem; font-weight: 750; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
+.ramadan-main { margin-top: 2px; font-size: 1.05rem; font-weight: 750; color: var(--text); font-variant-numeric: tabular-nums; }
+.ramadan-sub { margin-top: 2px; font-size: 0.7rem; color: var(--text-3); }
+
+/* ── Power & gas ────────────────────────────────────────────────────────── */
+.span-3 { grid-column: 1 / -1; }
+.util-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 28px; }
+.util-title { margin-bottom: 10px; font-size: 0.86rem; font-weight: 750; }
+.util-title span { margin-left: 6px; font-size: 0.7rem; font-weight: 600; color: var(--text-3); }
+.util-status { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.2px; }
+.util-status.on { color: var(--green); }
+.util-status.off { color: var(--yellow); }
+.util-sub { margin-top: 2px; font-size: 0.82rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.util-sub b { color: var(--text); }
+.util-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.util-chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-2); font-size: 0.74rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.util-chip em { font-style: normal; font-weight: 700; color: var(--text-3); }
+.util-chip.now { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 650; }
+.util-results { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; max-height: 260px; overflow-y: auto; }
+.util-pick { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; }
+.util-pick span { color: var(--text-3); font-size: 0.72rem; white-space: nowrap; }
+.util-warn { margin-top: 10px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--yellow); font-size: 0.76rem; color: var(--text); }
+a.link-btn { text-decoration: none; }
+
+/* ── Basket editor ──────────────────────────────────────────────────────── */
+.basket-dialog { display: flex; flex-direction: column; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
+.basket-body { overflow-y: auto; padding-right: 4px; }
+.basket-row { display: grid; grid-template-columns: 1fr 84px 92px; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 0.84rem; }
+.basket-row-name small { display: block; font-size: 0.68rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.basket-qty { width: 100%; padding: 7px 8px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.basket-qty:focus { outline: none; border-color: var(--accent); }
+.basket-row-unit { font-size: 0.7rem; color: var(--text-3); }
+.basket-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-strong); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.basket-actions { display: flex; align-items: center; gap: 14px; }
+.share-group { display: inline-flex; gap: 6px; margin-left: auto; }
+.share-group .share-btn { margin-left: 0; }
+
 /* ── Calculators ────────────────────────────────────────────────────────── */
 .tool-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -1105,6 +1153,8 @@ kbd {
   .page-title { font-size: 1.4rem; }
   .panel { grid-template-columns: 1fr; gap: 12px; }
   .stack { grid-template-columns: 1fr; gap: 12px; }
+  .util-grid { grid-template-columns: 1fr; }
+  .karat-row { margin-left: 0; }
   .tool-grid { grid-template-columns: 1fr 1fr; }
   .card-head { padding: 13px 15px 0; }
   .card-body { padding: 12px 15px 15px; }

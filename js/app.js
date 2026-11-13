@@ -348,6 +348,9 @@ function renderCommodities(data) {
         ${delta != null ? `<div class="row-change">${fmtDeltaBadge(delta, { pct })}</div>` : ''}
       </div>
     </div>
+    ${c.id === 'gold' && c.price ? `<div class="karat-row" title="24K rate scaled by purity">
+      ${[22, 21, 18].map(k => `<span><em>${k}K</em> ${fmtPKR(Math.round(c.price * k / 24))}</span>`).join('')}
+      <small>per tola</small></div>` : ''}
   `;
   }).join('');
 
@@ -580,6 +583,14 @@ const BASKET = [
   ['LPG cylinder', 1, '1 cylinder'], ['Petrol (Super)', 40, '40 L'],
 ];
 
+const BASKET_KEY = 'lr_basket';
+let userBasket = (() => {
+  try { const b = JSON.parse(localStorage.getItem(BASKET_KEY)); return b && typeof b === 'object' && Object.keys(b).length ? b : null; }
+  catch { return null; }
+})();
+// [name, quantity] pairs: the visitor's own basket if they made one
+const activeBasket = () => (userBasket ? Object.entries(userBasket) : BASKET.map(([n, q]) => [n, q]));
+
 const pakItems = data => (data?.sections ?? []).flatMap((sec, si) => (sec.items ?? []).map((item, ii) => ({ item, si, ii })));
 
 // Price in force on a date (last recorded point on or before it). With
@@ -598,15 +609,16 @@ const shiftDays = (ymd, n) => new Date(Date.parse(ymd) + n * 86400000).toISOStri
 // Basket cost now and at an earlier date; null when any item lacks history then
 function basketCost(data, ymd, graceDays = 0) {
   const byName = new Map(pakItems(data).map(({ item }) => [item.name, item]));
-  let total = 0;
-  for (const [name, qty] of BASKET) {
+  let total = 0, counted = 0;
+  for (const [name, qty] of activeBasket()) {
     const item = byName.get(name);
-    if (!item) return null;
+    if (!item) continue; // an item PBS no longer lists
     const p = ymd ? priceOn(item, ymd, graceDays) : item.rate;
     if (p == null) return null;
     total += p * qty;
+    counted++;
   }
-  return total;
+  return counted ? total : null;
 }
 
 function weeklyMovers(data) {
@@ -643,7 +655,8 @@ function renderPakInsights(data) {
       ${now != null ? `
       <div class="basket">
         <div class="basket-main">
-          <div class="basket-label">Monthly family basket <span class="basket-hint" title="${esc(BASKET.map(([n, , q]) => `${n.replace(/ \(.*\)/, '')} ${q}`).join(' · '))}">ⓘ</span></div>
+          <div class="basket-label">${userBasket ? 'Your monthly basket' : 'Monthly family basket'}
+            <button class="link-btn" id="editBasket" title="${userBasket ? 'Change your items' : 'A typical family of five — tap to set your own items'}">✏️ ${userBasket ? 'Edit' : 'Make it yours'}</button></div>
           <div class="basket-value">${fmtPKR(Math.round(now))}</div>
         </div>
         <div class="basket-vs">${[vs(month, 'vs last month'), vs(year, 'vs last year')].filter(Boolean).join('<br>')}</div>
@@ -653,7 +666,10 @@ function renderPakInsights(data) {
         <span class="movers-label">This week</span>
         ${up.map(chip).join('')}${down.map(chip).join('')}
       </div>` : ''}
-      <button class="share-btn" id="shareRates" title="Share today's rates">📤 Share rates</button>
+      <span class="share-group">
+        <button class="share-btn" id="shareRates" title="Share today's rates as text">📤 Share rates</button>
+        <button class="share-btn" id="shareImage" title="A picture of this week's prices for WhatsApp status">🖼️ Image</button>
+      </span>
     </div>`;
 }
 
@@ -1325,10 +1341,12 @@ function drawPrayer() {
   const now = karachiNowSec();
   const timings = withAzan(p.timings);
   const { next, wait } = nextPrayer(timings, now);
-  const key = next.name + JSON.stringify(azanOffsets);
+  const ram = ramadanInfo(p, now);
+  const key = next.name + JSON.stringify(azanOffsets) + (ram ? ram.mode + (ram.phase ?? ram.days) : '');
 
   if (prayerKey === key && el('prayerCountdown')) {
     el('prayerCountdown').textContent = fmtWait(wait);
+    if (ram?.mode === 'fast' && el('ramadanCountdown')) el('ramadanCountdown').textContent = fmtWait(ram.wait);
     return;
   }
   prayerKey = key;
@@ -1340,12 +1358,14 @@ function drawPrayer() {
   }).join('');
 
   setHTML('prayer-content', `
+    ${ram?.mode === 'fast' ? ramadanHTML(ram) : ''}
     <div class="prayer-next">
       <div class="prayer-next-label">Next azan</div>
       <div class="prayer-next-name">${esc(next.name)}</div>
       <div class="prayer-next-time">${fmt12(next.azan)} · in <span class="prayer-countdown" id="prayerCountdown">${fmtWait(wait)}</span></div>
     </div>
     <div class="prayer-list">${rows}</div>
+    ${ram?.mode === 'soon' ? ramadanHTML(ram) : ''}
     <div class="meta prayer-meta">
       <span>${p.hijri ? esc(p.hijri) + ' · ' : ''}Azan = start time + your mosque's delay · ${esc(p.method || '')}</span>
       <button class="link-btn" id="azanEdit">Adjust to my mosque</button>
@@ -1667,6 +1687,7 @@ const SEARCH_TARGETS = {
   currency: ['pakistan', 'card-currency'],
   pakcom: ['pakistan', 'card-pakcom'],
   tools: ['pakistan', 'card-tools'],
+  utilities: ['karachi', 'card-utilities'],
   movies: ['entertainment', 'card-movies'],
   music: ['entertainment', 'card-music'],
   musicpk: ['entertainment', 'card-musicpk'],
@@ -1677,6 +1698,8 @@ const searchIndex = {
   tools: [
     { type: 'tools', tool: 'zakat', emoji: '🕌', img: null, name: 'Zakat calculator', sub: 'Nisab from today\'s gold & silver', keys: 'zakat nisab calculator charity' },
     { type: 'tools', tool: 'gold', emoji: '🥇', img: null, name: 'Gold value calculator', sub: '24K–18K · tola, gram, masha, ratti', keys: 'gold value calculator karat jewellery tola gram' },
+    { type: 'utilities', emoji: '⚡', img: null, name: 'Load-shedding schedule', sub: 'K-Electric, by feeder', keys: 'load shedding loadshedding electricity power bijli k-electric ke feeder outage' },
+    { type: 'utilities', emoji: '🔥', img: null, name: 'Gas timings', sub: 'SSGC supply hours', keys: 'gas timings ssgc sui load shedding supply' },
     { type: 'tools', tool: 'fuel', emoji: '⛽', img: null, name: 'Fuel cost calculator', sub: 'Trip & monthly cost at today\'s price', keys: 'fuel cost calculator trip petrol diesel mileage' },
   ],
 };
@@ -1981,6 +2004,7 @@ const MODULES = [
     name: 'karachi', tab: 'karachi', endpoint: '/api/karachi', targets: ['prayer-content', 'weather-content'],
     render: d => { renderPrayer(d.prayer); renderWeather(d.weather, d.air); },
   },
+  { name: 'utilities', tab: 'karachi', endpoint: '/api/utilities', targets: ['utilities-content'], render: renderUtilities },
   { name: 'movies', tab: 'entertainment', endpoint: '/api/movies', targets: ['movies-content'], render: d => { renderRanked('movies-content', d); indexRanked('movies', d); } },
   { name: 'music', tab: 'entertainment', endpoint: '/api/music', targets: ['music-content'], render: d => { renderRanked('music-content', d); indexRanked('music', d); } },
   { name: 'musicpk', tab: 'entertainment', endpoint: '/api/music-pk', targets: ['musicpk-content'], render: d => { renderRanked('musicpk-content', d); indexRanked('musicpk', d); } },
@@ -2063,6 +2087,320 @@ function tickClock() {
   el('pkClock').textContent = t + ' PKT';
   if (!el('zenOverlay').hidden) el('zenClock').textContent = t;
   drawPrayer();
+  drawUtilities();
+}
+
+// ── Ramadan: Sehri & Iftar ───────────────────────────────────────────────────
+// Sehri ends when Fajr begins and Iftar is at Maghrib — the timetable's start
+// times, not the later mosque azan. The Hijri date is the calculated calendar,
+// so the month can begin a day off from the Ruet-e-Hilal announcement.
+function ramadanInfo(p, now) {
+  const time = n => p.timings.find(x => x.name === n)?.time;
+  const fajr = time('Fajr'), maghrib = time('Maghrib');
+  if (p.hijriDate?.month === 9 && fajr && maghrib) {
+    const f = hhmmToSec(fajr), m = hhmmToSec(maghrib);
+    const base = { mode: 'fast', fajr, maghrib, roza: p.hijriDate.day };
+    if (now < f) return { ...base, phase: 'sehri', label: 'Sehri ends', at: fajr, wait: f - now };
+    if (now < m) return { ...base, phase: 'iftar', label: 'Iftar', at: maghrib, wait: m - now };
+    return { ...base, phase: 'night', label: 'Sehri ends', at: fajr, wait: f + 86400 - now, roza: null };
+  }
+  if (p.ramadanStart) {
+    const days = Math.round((Date.parse(p.ramadanStart) - Date.parse(karachiToday())) / 86400000);
+    if (days > 0 && days <= 120) return { mode: 'soon', days, start: p.ramadanStart };
+  }
+  return null;
+}
+
+function ramadanHTML(r) {
+  if (!r) return '';
+  if (r.mode === 'soon') {
+    const date = new Date(r.start + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    return `<div class="ramadan soon">🌙 Ramadan expected around <b>${date}</b> · in ${r.days} day${r.days === 1 ? '' : 's'} <span>(subject to moon sighting)</span></div>`;
+  }
+  return `
+    <div class="ramadan fast">
+      <div class="ramadan-label">🌙 Ramadan${r.roza ? ` · Roza ${r.roza}` : ''}</div>
+      <div class="ramadan-main">${r.label}${r.phase === 'night' ? ' tomorrow about' : ''} ${fmt12(r.at)} · in <span class="prayer-countdown" id="ramadanCountdown">${fmtWait(r.wait)}</span></div>
+      <div class="ramadan-sub">Sehri ends ${fmt12(r.fajr)} · Iftar ${fmt12(r.maghrib)} · calculated calendar, may differ a day from the moon sighting</div>
+    </div>`;
+}
+
+// ── Power & gas: K-Electric load-shedding, SSGC gas hours ───────────────────
+
+const FEEDER_KEY = 'lr_feeder';
+let utilData = null;
+let utilMinute = null;
+
+const minNow = () => Math.floor(karachiNowSec() / 60);
+const fmtMin = m => fmt12(`${Math.floor(m / 60) % 24}:${m % 60}`);
+const fmtDur = m => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`);
+const feederId = f => `${f[0]}|${f[1]}`;
+
+// windows: [[startMin, endMin], …] (end < start = runs past midnight)
+function windowStatus(windows, now) {
+  const inside = windows.find(([s, e]) => (s <= e ? now >= s && now < e : now >= s || now < e)) ?? null;
+  const upcoming = windows
+    .filter(w => w !== inside)
+    .map(w => ({ w, wait: (w[0] - now + 1440) % 1440 }))
+    .sort((a, b) => a.wait - b.wait)[0] ?? null;
+  return {
+    inside,
+    left: inside ? (inside[1] - now + 1440) % 1440 : null,
+    next: upcoming?.w ?? null,
+    wait: upcoming?.wait ?? null,
+  };
+}
+
+const windowChips = (windows, st, labels = []) => windows.map((w, i) =>
+  `<span class="util-chip${w === st.inside ? ' now' : ''}">${labels[i] ? `<em>${esc(labels[i])}</em> ` : ''}${fmtMin(w[0])} – ${fmtMin(w[1])}</span>`).join('');
+
+function savedFeeder() {
+  try { return localStorage.getItem(FEEDER_KEY); } catch { return null; }
+}
+
+function powerHTML() {
+  const p = utilData?.power;
+  const head = '<div class="util-title">⚡ Electricity <span>K-Electric load-shedding</span></div>';
+  if (!p?.feeders?.length) {
+    return `${head}<div class="empty-message">KE's schedule couldn't be read right now.
+      <a class="link-btn" href="https://ke.com.pk/load-shed-schedule/" target="_blank" rel="noopener">Open KE's page</a></div>`;
+  }
+  const from = p.effective ? ` from ${fmtShortDate(p.effective)}` : '';
+  const srcNote = `KE schedule${from}${p.source === 'saved' ? ' (saved copy — KE unreachable)' : ''} · timings may vary slightly`;
+  const pdf = safeUrl(p.pdf) ? ` · <a class="link-btn" href="${safeUrl(p.pdf)}" target="_blank" rel="noopener">KE's PDF</a>` : '';
+  const id = savedFeeder();
+  const f = id ? p.feeders.find(x => feederId(x) === id) : null;
+
+  if (id && !f) {
+    return `${head}
+      <div class="util-status on">✅ Not on KE's load-shed list</div>
+      <div class="util-sub">“${esc(id.split('|')[0])}” isn't in the current schedule. KE lists only feeders that get load-shedding, so yours should be exempt for now.</div>
+      <div class="meta">${srcNote}${pdf} · <button class="link-btn" id="feederChange">Change feeder</button></div>`;
+  }
+  if (f) {
+    const st = windowStatus(f[2], minNow());
+    const total = f[2].reduce((a, [s, e]) => a + ((e - s + 1440) % 1440), 0);
+    return `${head}
+      ${st.inside
+        ? `<div class="util-status off">🔌 Load-shedding now</div>
+           <div class="util-sub">Power expected back at <b>${fmtMin(st.inside[1])}</b> · in ${fmtDur(st.left)}</div>`
+        : `<div class="util-status on">💡 Power should be on</div>
+           <div class="util-sub">Next outage <b>${fmtMin(st.next[0])} – ${fmtMin(st.next[1])}</b> · in ${fmtDur(st.wait)}</div>`}
+      <div class="util-chips">${windowChips(f[2], st)}</div>
+      <div class="meta"><b>${esc(f[0])}</b> · ${esc(f[1])} grid · ${fmtDur(total)} of outages a day · ${srcNote}${pdf}
+        · <button class="link-btn" id="feederChange">Change feeder</button></div>`;
+  }
+  return `${head}
+    <div class="conv-field"><label for="feederSearch">Find your feeder or area</label>
+      <input class="conv-input" id="feederSearch" type="search" autocomplete="off" placeholder="e.g. Lyari, Gulshan, Baldia…"></div>
+    <div class="util-results" id="feederResults"></div>
+    <div class="meta">Your feeder name is in the KE Live app (Power tab) and on your bill. ${p.feeders.length} feeders are on the list;
+      if yours isn't, KE has it as load-shed free. ${srcNote}${pdf}</div>`;
+}
+
+function gasHTML() {
+  const g = utilData?.gas;
+  const head = '<div class="util-title">🔥 Gas <span>SSGC supply hours</span></div>';
+  if (!g?.slots?.length) return `${head}<div class="empty-message">Gas hours unavailable right now.</div>`;
+  const windows = g.slots.map(s => [hhmmToSec(s.start) / 60, hhmmToSec(s.end) / 60]);
+  const st = windowStatus(windows, minNow());
+  const notice = safeUrl(g.notice) ? `<a class="link-btn" href="${safeUrl(g.notice)}" target="_blank" rel="noopener">${g.changed ? 'See the new notice' : 'official notice'}</a>` : '';
+  return `${head}
+    ${st.inside
+      ? `<div class="util-status on">🔥 Gas should be on</div>
+         <div class="util-sub">Until <b>${fmtMin(st.inside[1])}</b> · ${fmtDur(st.left)} left</div>`
+      : `<div class="util-status off">Gas is off now</div>
+         <div class="util-sub">Next supply <b>${fmtMin(st.next[0])} – ${fmtMin(st.next[1])}</b> · in ${fmtDur(st.wait)}</div>`}
+    <div class="util-chips">${windowChips(windows, st, g.slots.map(s => s.label))}</div>
+    ${g.changed ? `<div class="util-warn">⚠️ SSGC has posted a new notice — these hours may be out of date. ${notice}</div>` : ''}
+    <div class="meta">${esc(g.note || 'SSGC schedule')}${g.announced ? `, announced ${esc(fmtShortDate(g.announced))}` : ''}${!g.changed && notice ? ` · ${notice}` : ''}
+      · actual pressure varies by area</div>`;
+}
+
+function drawUtilities(force = false) {
+  if (!utilData || !el('utilPower')) return;
+  const m = minNow();
+  if (!force && m === utilMinute) return;
+  utilMinute = m;
+  el('utilGas').innerHTML = gasHTML();
+  // don't redraw the finder while someone is typing in it
+  if (!el('feederSearch') || force) el('utilPower').innerHTML = powerHTML();
+}
+
+function renderUtilities(d) {
+  utilData = d;
+  setHTML('utilities-content', '<div class="util-grid"><section class="util" id="utilPower"></section><section class="util" id="utilGas"></section></div>');
+  drawUtilities(true);
+}
+
+function initUtilities() {
+  const box = el('utilities-content');
+  box.addEventListener('input', e => {
+    if (e.target.id !== 'feederSearch') return;
+    const q = e.target.value.trim().toLowerCase();
+    const list = q.length < 2 ? [] : utilData.power.feeders
+      .filter(f => f[0].toLowerCase().includes(q) || f[1].toLowerCase().includes(q))
+      .sort((a, b) => (b[0].toLowerCase().startsWith(q) - a[0].toLowerCase().startsWith(q)) || a[0].localeCompare(b[0]))
+      .slice(0, 12);
+    el('feederResults').innerHTML = q.length < 2 ? ''
+      : list.length
+        ? list.map(f => `<button class="util-pick" data-feeder="${esc(feederId(f))}"><b>${esc(f[0])}</b><span>${esc(f[1])}</span></button>`).join('')
+        : '<div class="empty-message">No feeder or area matches — check the spelling in the KE Live app.</div>';
+  });
+  box.addEventListener('click', e => {
+    const pick = e.target.closest('[data-feeder]');
+    if (pick) {
+      try { localStorage.setItem(FEEDER_KEY, pick.dataset.feeder); } catch { /* shown for this visit only */ }
+      drawUtilities(true);
+    } else if (e.target.closest('#feederChange')) {
+      try { localStorage.removeItem(FEEDER_KEY); } catch { /* ignore */ }
+      drawUtilities(true);
+      el('feederSearch')?.focus();
+    }
+  });
+}
+
+// ── Personal basket editor ───────────────────────────────────────────────────
+
+const basketEditable = item => !/^(Electricity|Gas) \(/.test(item.name); // slab rates aren't a household bill
+
+function openBasketEditor() {
+  if (!pakcomData) return;
+  const current = new Map(activeBasket());
+  el('basketBody').innerHTML = pakcomData.sections.map(sec => {
+    const items = sec.items.filter(basketEditable);
+    if (!items.length) return '';
+    return `<div class="section-title">${SECTION_ICONS[sec.title] || '📦'} ${esc(sec.title)}</div>` + items.map(i => `
+      <label class="basket-row">
+        <span class="basket-row-name">${esc(i.name)}<small>${fmtPKR(i.rate)} per ${esc((i.unit || '').replace('PKR/', ''))}</small></span>
+        <input class="basket-qty" type="number" inputmode="decimal" min="0" step="any" data-name="${esc(i.name)}" data-rate="${i.rate}" value="${current.get(i.name) ?? ''}" placeholder="0">
+        <span class="basket-row-unit">× ${esc((i.unit || '').replace('PKR/', ''))}</span>
+      </label>`).join('');
+  }).join('');
+  updateBasketTotal();
+  el('basketModal').hidden = false;
+}
+
+function updateBasketTotal() {
+  let total = 0;
+  document.querySelectorAll('.basket-qty').forEach(i => { total += (parseFloat(i.value) || 0) * +i.dataset.rate; });
+  el('basketTotal').innerHTML = `Monthly total <b>${fmtPKR(Math.round(total))}</b>`;
+}
+
+function closeBasketEditor() { el('basketModal').hidden = true; }
+
+function saveBasket(reset = false) {
+  if (reset) {
+    userBasket = null;
+    try { localStorage.removeItem(BASKET_KEY); } catch { /* ignore */ }
+  } else {
+    const b = {};
+    document.querySelectorAll('.basket-qty').forEach(i => { const q = parseFloat(i.value); if (q > 0) b[i.dataset.name] = q; });
+    userBasket = Object.keys(b).length ? b : null;
+    try { userBasket ? localStorage.setItem(BASKET_KEY, JSON.stringify(b)) : localStorage.removeItem(BASKET_KEY); } catch { /* kept for this visit */ }
+  }
+  closeBasketEditor();
+  renderPakCom(pakcomData);
+}
+
+function initBasket() {
+  el('basketClose').addEventListener('click', closeBasketEditor);
+  el('basketBackdrop').addEventListener('click', closeBasketEditor);
+  el('basketSave').addEventListener('click', () => saveBasket(false));
+  el('basketReset').addEventListener('click', () => saveBasket(true));
+  el('basketBody').addEventListener('input', updateBasketTotal);
+}
+
+// ── Weekly digest image (drawn in the browser, nothing uploaded) ─────────────
+
+function digestCanvas() {
+  const data = pakcomData;
+  const W = 1080, H = 1920, P = 80;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const FONT = '-apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  const text = (s, x, y, { size = 40, weight = 500, color = '#ececf4', align = 'left' } = {}) => {
+    g.font = `${weight} ${size}px ${FONT}`; g.fillStyle = color; g.textAlign = align; g.fillText(s, x, y);
+  };
+  const panel = (y, h) => { g.fillStyle = 'rgba(255,255,255,0.055)'; g.beginPath(); g.roundRect(P - 30, y, W - 2 * P + 60, h, 28); g.fill(); };
+
+  const bg = g.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#0b0b16'); bg.addColorStop(1, '#1b1440');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#8b6cff'; g.fillRect(P, 150, 90, 8);
+
+  text('KARACHI RATES', P, 130, { size: 34, weight: 800, color: '#8b6cff' });
+  text("This week's prices", P, 250, { size: 84, weight: 800 });
+  const week = data.updated ? new Date(data.updated + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+  text(`Week ended ${week}`, P, 312, { size: 36, color: '#a3a3c2' });
+
+  let y = 390;
+  const movers = weeklyMovers(data);
+  const groups = [
+    ['▲ Went up', '#f4506e', movers.filter(m => m.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 5)],
+    ['▼ Came down', '#2dd4a7', movers.filter(m => m.pct < 0).sort((a, b) => a.pct - b.pct).slice(0, 5)],
+  ];
+  for (const [title, color, list] of groups) {
+    if (!list.length) continue;
+    panel(y, 96 + list.length * 78);
+    text(title, P, y + 62, { size: 40, weight: 800, color });
+    list.forEach((m, i) => {
+      const ry = y + 132 + i * 78;
+      text(m.item.name.replace(/ \(.*\)/, ''), P, ry, { size: 42, weight: 600 });
+      text(`${Math.abs(m.pct).toFixed(1)}%`, W - P, ry, { size: 42, weight: 800, color, align: 'right' });
+      text(`${fmtPKR(m.item.rate)} ${(m.item.unit || '').replace('PKR', '')}`, W - P - 190, ry, { size: 34, color: '#a3a3c2', align: 'right' });
+    });
+    y += 96 + list.length * 78 + 34;
+  }
+
+  const items = new Map(pakItems(data).map(({ item }) => [item.name, item]));
+  const gold = state.commodities?.find?.(x => x.id === 'gold');
+  const facts = [
+    ['⛽ Petrol', items.get('Petrol (Super)') && `${fmtPKR(items.get('Petrol (Super)').rate)} /L`],
+    ['🚛 Diesel', items.get('Hi-Speed Diesel') && `${fmtPKR(items.get('Hi-Speed Diesel').rate)} /L`],
+    ['🥇 Gold 24K', gold && `${fmtPKR(gold.price)} /tola`],
+    ['💵 US Dollar', state.forex?.usdToPkr && `Rs ${state.forex.usdToPkr.toFixed(2)}`],
+  ].filter(f => f[1]);
+  if (facts.length) {
+    panel(y, 40 + facts.length * 74);
+    facts.forEach(([k, v], i) => {
+      text(k, P, y + 82 + i * 74, { size: 40, weight: 600 });
+      text(v, W - P, y + 82 + i * 74, { size: 40, weight: 800, align: 'right' });
+    });
+    y += 40 + facts.length * 74 + 34;
+  }
+
+  const now = basketCost(data, null);
+  const month = data.updated ? basketCost(data, shiftDays(data.updated, -28)) : null;
+  if (now != null && y < H - 330) {
+    const pct = month ? ((now - month) / month) * 100 : null;
+    panel(y, 150);
+    text(userBasket ? 'My monthly basket' : 'Monthly family basket', P, y + 62, { size: 34, color: '#a3a3c2' });
+    text(fmtPKR(Math.round(now)), P, y + 122, { size: 54, weight: 800 });
+    if (pct != null) text(`${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}% vs last month`, W - P, y + 122, { size: 36, weight: 700, color: pct > 0 ? '#f4506e' : '#2dd4a7', align: 'right' });
+  }
+
+  text('Official Karachi prices · Pakistan Bureau of Statistics', P, H - 130, { size: 30, color: '#6c6c8a' });
+  text(location.host || 'LiveRates', P, H - 80, { size: 36, weight: 700, color: '#8b6cff' });
+  return c;
+}
+
+async function shareDigestImage() {
+  if (!pakcomData) return;
+  const blob = await new Promise(res => digestCanvas().toBlob(res, 'image/jpeg', 0.92));
+  if (!blob) return;
+  const file = new File([blob], `karachi-rates-${pakcomData.updated || 'week'}.jpg`, { type: 'image/jpeg' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) {
+    if (e?.name === 'AbortError') return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
 // ── PWA: service worker + install button ──────────────────────────────────────
@@ -2365,6 +2703,8 @@ document.addEventListener('DOMContentLoaded', () => {
   el('chartClose').addEventListener('click', closeChart);
   el('chartBackdrop').addEventListener('click', closeChart);
   initChartInteractions();
+  initUtilities();
+  initBasket();
 
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -2381,7 +2721,8 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (k === 't') cycleTheme();
     else if (k === 'z') el('zenOverlay').hidden ? enterZen() : exitZen();
     else if (k === 'escape') {
-      if (!el('chartModal').hidden) closeChart();
+      if (!el('basketModal').hidden) closeBasketEditor();
+      else if (!el('chartModal').hidden) closeChart();
       else if (!el('zenOverlay').hidden) exitZen();
     }
   });
@@ -2392,5 +2733,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pk = e.target.closest('.pakcom-item, .mover');
     if (pk) openChart(+pk.dataset.si, +pk.dataset.ii);
     if (e.target.closest('#shareRates')) shareRates();
+    if (e.target.closest('#shareImage')) shareDigestImage();
+    if (e.target.closest('#editBasket')) openBasketEditor();
   });
 });

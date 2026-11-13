@@ -56,6 +56,7 @@ async function fetchPrayer() {
   return {
     date: j.data.date?.readable ?? null,
     hijri: hijri ? `${hijri.day} ${hijri.month?.en} ${hijri.year} AH` : null,
+    hijriDate: hijri ? { day: +hijri.day, month: +hijri.month?.number, year: +hijri.year } : null,
     timings: [
       { name: 'Fajr', time: cleanTime(t.Fajr) },
       { name: 'Sunrise', time: cleanTime(t.Sunrise), info: true },
@@ -261,6 +262,16 @@ async function fetchAirQuality() {
   return { aqi: Math.round(c.us_aqi), pm25: c.pm2_5 };
 }
 
+// When the next Ramadan is expected to start (calculated calendar; the real
+// start follows the moon sighting and can differ by a day). → "YYYY-MM-DD"
+async function fetchRamadanStart(h) {
+  if (!h?.year || !h?.month) return null;
+  const year = h.month > 9 ? h.year + 1 : h.year;
+  const j = await getJSON(`https://api.aladhan.com/v1/hToG/01-09-${year}`, 4000);
+  const [d, m, y] = String(j?.data?.gregorian?.date ?? '').split('-');
+  return y && m && d ? `${y}-${m}-${d}` : null;
+}
+
 // Prayer times only change once a day: keep today's result per warm instance
 let prayerCache = null; // { day, value }
 
@@ -284,8 +295,9 @@ async function getPrayer() {
     p.method = 'Calculated · Univ. of Islamic Sciences, Karachi (Dawat-e-Islami unreachable)';
     p.source = 'calculated';
   }
+  p.ramadanStart = await fetchRamadanStart(p.hijriDate).catch(() => null);
   // only a confirmed timetable is kept for the day; a fallback is retried
-  if (!diError) prayerCache = { day, value: p };
+  if (!diError && p.ramadanStart) prayerCache = { day, value: p };
   return { ...p, diError };
 }
 
