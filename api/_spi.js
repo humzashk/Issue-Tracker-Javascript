@@ -201,12 +201,23 @@ async function getSpiSeries(today) {
   if (Date.now() - missCache.at > 3 * 3600 * 1000) missCache = { at: Date.now(), misses: new Set() };
   const thursdays = recentThursdays(today, WEEKS);
   const report = [];
-  const weeks = await pool(thursdays.map((t, i) => ({ t, recent: i < 3 })), 12, async ({ t, recent }) => {
+  // A download that times out or errors is retried once and reported, and
+  // only a real 404 ("not published") is remembered as a miss.
+  const fetchRetry = async (key, recent) => {
+    try { return await fetchAnnex(key, recent); } catch { return fetchAnnex(key, recent); }
+  };
+  const weeks = await pool(thursdays.map((t, i) => ({ t, recent: i < 3 })), 8, async ({ t, recent }) => {
     for (const day of [t, t - 86400000]) { // Thursday, else Wednesday
       const key = ddmmyyyy(day);
       if (weekCache.has(key)) return { date: ymd(day), items: weekCache.get(key) };
       if (missCache.misses.has(key)) continue;
-      const r = await fetchAnnex(key, recent);
+      let r;
+      try {
+        r = await fetchRetry(key, recent);
+      } catch (e) {
+        report.push({ week: key, error: e.name === 'AbortError' ? 'timeout' : e.message });
+        return null;
+      }
       if (r.buf) {
         try {
           const items = parseAnnex(r.buf);
@@ -217,7 +228,8 @@ async function getSpiSeries(today) {
           return null;
         }
       }
-      missCache.misses.add(key);
+      if (r.status === 404) missCache.misses.add(key);
+      else { report.push({ week: key, error: `HTTP ${r.status}` }); return null; }
     }
     return null;
   });
