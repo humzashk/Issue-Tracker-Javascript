@@ -406,7 +406,7 @@ module.exports = async function handler(req, res) {
     return res.status(502).json({ success: false, message: 'Could not fetch commodity prices' });
   }
 
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=1800');
   res.json({
     success: true,
     data: usable,

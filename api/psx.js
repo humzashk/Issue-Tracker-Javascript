@@ -192,7 +192,7 @@ module.exports = async function handler(req, res) {
   }
 
   const change = data.prevClose ? data.value - data.prevClose : null;
-  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=900');
   res.json({
     success: true,
     data: {

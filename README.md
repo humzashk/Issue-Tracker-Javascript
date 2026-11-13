@@ -7,11 +7,11 @@ Pakistan-focused live dashboard — markets, daily rates, Karachi essentials and
 | Tab | Cards | Sources |
 |---|---|---|
 | **Markets** | Crypto (PKR + USD, 7-day sparklines) · Market Mood · Gold, Silver & Oil · PSX KSE-100 · Predict BTC game | CoinGecko · alternative.me · All-Pakistan Sarafa Association daily rate via Business Recorder (fallback: gold.pk, pakgold.net), ICE/NYMEX futures (CNBC + Stooq + Yahoo consensus) · PSX Data Portal |
-| **Pakistan** | Currency converter + rates · Daily Rates (26 Karachi essentials: fuel, energy, meat, dairy, grocery, produce) with a year of weekly history, zoomable charts & 30-day forecast | open.er-api.com · Pakistan Bureau of Statistics weekly SPI (Karachi average, read live from the Excel annexes) + today's notified petrol/diesel price (newest effective date across 5 sites) |
+| **Pakistan** | Currency converter + rates · Daily Rates (26 Karachi essentials) with this week's biggest movers, a monthly family-basket cost vs last month & last year, one-tap WhatsApp share, a year of weekly history, zoomable charts & 30-day forecast · Calculators: zakat (Hanafi nisab from today's gold & silver), gold value by karat & weight, fuel trip cost | open.er-api.com · Pakistan Bureau of Statistics weekly SPI (Karachi average, read live from the Excel annexes) + today's notified petrol/diesel price (newest effective date across 5 sites) · Sarafa Association gold/silver |
 | **Karachi** | Prayer times (next-prayer countdown, Hijri date) · 7-day weather + air quality | Aladhan (Univ. of Islamic Sciences, Karachi · Hanafi) · Open-Meteo |
 | **Entertainment** | Top movies · Global Top 10 · Pakistan trending (30s previews) | IMDb/OMDb · Spotify/YouTube daily charts, Apple, Deezer |
 
-Also: search across everything, themes, zen mode, XP/achievements, and a few easter eggs. Keys: `1`–`4` sections, `R` refresh, `T` theme, `Z` zen.
+Also: search across everything (including the calculators), app shortcuts when installed (long-press the icon → Daily Rates / Prayer Times / Markets), themes, zen mode, XP/achievements, and a few easter eggs. Keys: `1`–`4` sections, `R` refresh, `T` theme, `Z` zen.
 
 ## Stack
 

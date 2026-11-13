@@ -27,7 +27,7 @@ module.exports = async function handler(req, res) {
       .filter(c => rates[c.code])
       .map(c => ({ ...c, pkr: pkr / rates[c.code] }));
 
-    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=21600');
     res.json({
       success: true,
       data: {

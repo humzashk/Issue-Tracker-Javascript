@@ -21,7 +21,7 @@
     <meta property="og:image" content="https://issue-tracker-javascript.vercel.app/icons/icon-512.png">
     <meta name="twitter:card" content="summary">
 
-    <link rel="stylesheet" href="/css/styles.css?v=24">
+    <link rel="stylesheet" href="/css/styles.css?v=25">
 </head>
 <body>
     <div class="aurora" aria-hidden="true"></div>
@@ -120,10 +120,17 @@
 
         <!-- ── Pakistan ────────────────────────────────────────────────── -->
         <section class="panel" data-panel="pakistan" hidden>
-            <article class="card" id="card-currency">
-                <header class="card-head"><span class="card-badge">💱</span><h2>Currency</h2><span class="card-note">vs PKR</span></header>
-                <div class="card-body" id="currency-content"></div>
-            </article>
+            <div class="stack">
+                <article class="card" id="card-currency">
+                    <header class="card-head"><span class="card-badge">💱</span><h2>Currency</h2><span class="card-note">vs PKR</span></header>
+                    <div class="card-body" id="currency-content"></div>
+                </article>
+
+                <article class="card" id="card-tools">
+                    <header class="card-head"><span class="card-badge">🧮</span><h2>Calculators</h2><span class="card-note">live rates</span></header>
+                    <div class="card-body" id="tools-content"></div>
+                </article>
+            </div>
 
             <article class="card span-2" id="card-pakcom">
                 <header class="card-head"><span class="card-badge">🛒</span><h2>Daily Rates</h2><span class="card-note">Tap for chart</span></header>
@@ -200,7 +207,7 @@
         </div>
     </div>
 
-    <script src="/js/app.js?v=33"></script>
+    <script src="/js/app.js?v=34"></script>
     <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

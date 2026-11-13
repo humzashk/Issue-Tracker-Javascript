@@ -85,7 +85,7 @@ module.exports = async function handler(req, res) {
       })
     );
 
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=7200');
+    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=43200');
     res.json({
       success: true,
       data,

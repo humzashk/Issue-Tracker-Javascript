@@ -553,6 +553,7 @@ function renderPakCom(data) {
   `).join('');
 
   setHTML('pakcom-content', `
+    ${renderPakInsights(data)}
     ${sections}
     <div class="meta">
       ${data.official
@@ -564,6 +565,285 @@ function renderPakCom(data) {
       · ▲▼ vs last week
     </div>
   `);
+}
+
+// ── Daily Rates insights: movers, family basket, share ──────────────────────
+
+// An illustrative month of groceries and fuel for a Karachi family of five.
+// Names match the Daily Rates items; quantities are in each item's unit.
+const BASKET = [
+  ['Atta (wheat flour)', 1.5, '30 kg'], ['Basmati Rice (broken)', 5, '5 kg'], ['Sugar', 4, '4 kg'],
+  ['Cooking Oil', 1, '5 L'], ['Ghee', 2, '2 kg'], ['Daal Chana', 2, '2 kg'], ['Daal Masoor', 2, '2 kg'],
+  ['Milk (fresh)', 60, '60 L'], ['Dahi', 4, '4 kg'], ['Eggs (farm)', 4, '4 dozen'],
+  ['Chicken (live)', 8, '8 kg'], ['Beef (with bone)', 3, '3 kg'],
+  ['Onion', 6, '6 kg'], ['Tomato', 4, '4 kg'], ['Potato', 6, '6 kg'], ['Banana', 4, '4 dozen'],
+  ['LPG cylinder', 1, '1 cylinder'], ['Petrol (Super)', 40, '40 L'],
+];
+
+const pakItems = data => (data?.sections ?? []).flatMap((sec, si) => (sec.items ?? []).map((item, ii) => ({ item, si, ii })));
+
+// Price in force on a date (last recorded point on or before it). With
+// `graceDays`, a series that starts a little after the date uses its first
+// point — PBS skips holiday weeks, so "a year ago" can be a week short.
+function priceOn(item, ymd, graceDays = 0) {
+  const h = item.history ?? [];
+  let v = null;
+  for (const [d, p] of h) { if (d <= ymd) v = p; else break; }
+  if (v == null && graceDays && h.length && h[0][0] <= shiftDays(ymd, graceDays)) v = h[0][1];
+  return v;
+}
+
+const shiftDays = (ymd, n) => new Date(Date.parse(ymd) + n * 86400000).toISOString().slice(0, 10);
+
+// Basket cost now and at an earlier date; null when any item lacks history then
+function basketCost(data, ymd, graceDays = 0) {
+  const byName = new Map(pakItems(data).map(({ item }) => [item.name, item]));
+  let total = 0;
+  for (const [name, qty] of BASKET) {
+    const item = byName.get(name);
+    if (!item) return null;
+    const p = ymd ? priceOn(item, ymd, graceDays) : item.rate;
+    if (p == null) return null;
+    total += p * qty;
+  }
+  return total;
+}
+
+function weeklyMovers(data) {
+  return pakItems(data)
+    .map(({ item, si, ii }) => {
+      const h = item.history ?? [];
+      if (h.length < 2) return null;
+      const prev = h[h.length - 2][1], now = item.rate;
+      return prev ? { item, si, ii, pct: ((now - prev) / prev) * 100 } : null;
+    })
+    .filter(m => m && Math.abs(m.pct) >= 0.5);
+}
+
+function renderPakInsights(data) {
+  const base = data.updated;
+  const now = basketCost(data, null);
+  const month = base ? basketCost(data, shiftDays(base, -28)) : null;
+  const year = base ? basketCost(data, shiftDays(base, -364), 21) : null;
+  const vs = (then, label) => {
+    if (now == null || then == null) return '';
+    const pct = ((now - then) / then) * 100;
+    const cls = pct > 0.05 ? 'negative' : pct < -0.05 ? 'positive' : 'neutral';
+    return `<span class="${cls}">${pct > 0 ? '▲' : pct < 0 ? '▼' : '—'} ${Math.abs(pct).toFixed(1)}%</span> ${label}`;
+  };
+
+  const movers = weeklyMovers(data);
+  const up = movers.filter(m => m.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 3);
+  const down = movers.filter(m => m.pct < 0).sort((a, b) => a.pct - b.pct).slice(0, 3);
+  const chip = m => `<button class="mover ${m.pct > 0 ? 'up' : 'down'}" data-si="${m.si}" data-ii="${m.ii}">
+      ${esc(m.item.name.replace(/ \(.*\)/, ''))} <b>${m.pct > 0 ? '▲' : '▼'} ${Math.abs(m.pct).toFixed(1)}%</b></button>`;
+
+  return `
+    <div class="pak-insights">
+      ${now != null ? `
+      <div class="basket">
+        <div class="basket-main">
+          <div class="basket-label">Monthly family basket <span class="basket-hint" title="${esc(BASKET.map(([n, , q]) => `${n.replace(/ \(.*\)/, '')} ${q}`).join(' · '))}">ⓘ</span></div>
+          <div class="basket-value">${fmtPKR(Math.round(now))}</div>
+        </div>
+        <div class="basket-vs">${[vs(month, 'vs last month'), vs(year, 'vs last year')].filter(Boolean).join('<br>')}</div>
+      </div>` : ''}
+      ${up.length || down.length ? `
+      <div class="movers">
+        <span class="movers-label">This week</span>
+        ${up.map(chip).join('')}${down.map(chip).join('')}
+      </div>` : ''}
+      <button class="share-btn" id="shareRates" title="Share today's rates">📤 Share rates</button>
+    </div>`;
+}
+
+function ratesShareText() {
+  const items = new Map(pakItems(pakcomData).map(({ item }) => [item.name, item]));
+  const r = n => (items.has(n) ? fmtPKR(items.get(n).rate) : '—');
+  const gold = state.commodities?.find?.(c => c.id === 'gold');
+  const lines = [
+    `📊 Karachi rates — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Karachi' })}`,
+    `⛽ Petrol ${r('Petrol (Super)')} · Diesel ${r('Hi-Speed Diesel')} /L`,
+    `🌾 Atta ${r('Atta (wheat flour)')} /20kg · Sugar ${r('Sugar')} /kg`,
+    `🍗 Chicken ${r('Chicken (live)')} /kg · Eggs ${r('Eggs (farm)')} /dozen`,
+    `🥬 Onion ${r('Onion')} · Tomato ${r('Tomato')} · Potato ${r('Potato')} /kg`,
+    gold ? `🥇 Gold 24K ${fmtPKR(gold.price)} /tola` : null,
+    state.forex?.usdToPkr ? `💵 $1 = Rs ${state.forex.usdToPkr.toFixed(2)}` : null,
+    `Live: ${location.origin}/#pakistan`,
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+async function shareRates() {
+  const text = ratesShareText();
+  try {
+    if (navigator.share) { await navigator.share({ text }); return; }
+  } catch (e) {
+    if (e?.name === 'AbortError') return; // user closed the share sheet
+  }
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+}
+
+// ── Calculators: zakat, gold value, fuel trip ───────────────────────────────
+
+const TOLA_G = 11.6638;
+const GOLD_UNITS = { tola: 1, gram: 1 / TOLA_G, masha: 1 / 12, ratti: 1 / 96 };
+const TOOLS_KEY = 'lr_tools';
+let toolsTab = 'zakat';
+
+function toolRates() {
+  const c = state.commodities ?? [];
+  const gold = c.find(x => x.id === 'gold'), silver = c.find(x => x.id === 'silver');
+  const items = new Map(pakItems(pakcomData).map(({ item }) => [item.name, item]));
+  return {
+    gold: gold?.price ?? null, goldSrc: gold?.source ?? '',
+    silver: silver?.price ?? null,
+    petrol: items.get('Petrol (Super)')?.rate ?? null,
+    diesel: items.get('Hi-Speed Diesel')?.rate ?? null,
+  };
+}
+
+const numIn = id => Math.max(0, parseFloat(el(id)?.value) || 0);
+const field = (id, label, value = '', attrs = '') => `
+  <div class="conv-field tool-field"><label for="${id}">${label}</label>
+  <input class="conv-input" id="${id}" type="number" inputmode="decimal" min="0" value="${value}" ${attrs}></div>`;
+const karatSelect = id => `
+  <div class="conv-field tool-field"><label for="${id}">Karat</label>
+  <select class="conv-input tool-select" id="${id}">
+    <option value="24">24K</option><option value="22" selected>22K</option><option value="21">21K</option><option value="18">18K</option>
+  </select></div>`;
+
+function loadToolPrefs() {
+  try { return JSON.parse(localStorage.getItem(TOOLS_KEY)) || {}; } catch { return {}; }
+}
+function saveToolPrefs() {
+  try {
+    localStorage.setItem(TOOLS_KEY, JSON.stringify({
+      tab: toolsTab, km: el('tFuelKm')?.value, kmpl: el('tFuelKmpl')?.value,
+      trips: el('tFuelTrips')?.value, fuel: el('tFuelType')?.value,
+    }));
+  } catch { /* storage unavailable — fine */ }
+}
+
+function buildTools() {
+  const prefs = loadToolPrefs();
+  toolsTab = prefs.tab || 'zakat';
+  setHTML('tools-content', `
+    <div class="tool-tabs" role="tablist">
+      <button class="chart-range" data-tool="zakat">🕌 Zakat</button>
+      <button class="chart-range" data-tool="gold">🥇 Gold value</button>
+      <button class="chart-range" data-tool="fuel">⛽ Fuel cost</button>
+    </div>
+
+    <div class="tool-panel" data-panel-tool="zakat">
+      <div class="tool-grid">
+        ${field('tZGold', 'Gold (tola)')}${karatSelect('tZKarat')}
+        ${field('tZSilver', 'Silver (tola)')}${field('tZCash', 'Cash & bank (Rs)')}
+        ${field('tZBiz', 'Business stock / investments (Rs)')}${field('tZOwed', 'Money owed to you (Rs)')}
+        ${field('tZDebt', 'Debts & bills due now (Rs)')}
+      </div>
+      <div class="tool-result" id="tZOut"></div>
+    </div>
+
+    <div class="tool-panel" data-panel-tool="gold" hidden>
+      <div class="tool-grid">
+        ${field('tGWeight', 'Weight', '1')}
+        <div class="conv-field tool-field"><label for="tGUnit">Unit</label>
+          <select class="conv-input tool-select" id="tGUnit">
+            <option value="tola">tola</option><option value="gram">gram</option><option value="masha">masha</option><option value="ratti">ratti</option>
+          </select></div>
+        ${karatSelect('tGKarat')}
+      </div>
+      <div class="tool-result" id="tGOut"></div>
+    </div>
+
+    <div class="tool-panel" data-panel-tool="fuel" hidden>
+      <div class="tool-grid">
+        ${field('tFuelKm', 'Distance one way (km)', prefs.km ?? '15')}
+        ${field('tFuelKmpl', 'Mileage (km per litre)', prefs.kmpl ?? '14')}
+        ${field('tFuelTrips', 'Round trips a month', prefs.trips ?? '22')}
+        <div class="conv-field tool-field"><label for="tFuelType">Fuel</label>
+          <select class="conv-input tool-select" id="tFuelType">
+            <option value="petrol">Petrol</option><option value="diesel">Diesel</option>
+          </select></div>
+      </div>
+      <div class="tool-result" id="tFuelOut"></div>
+    </div>
+  `);
+  if (prefs.fuel) el('tFuelType').value = prefs.fuel;
+  el('tools-content').addEventListener('input', () => { updateTools(); saveToolPrefs(); });
+  el('tools-content').addEventListener('change', () => { updateTools(); saveToolPrefs(); });
+  el('tools-content').addEventListener('click', e => {
+    const b = e.target.closest('[data-tool]');
+    if (!b) return;
+    toolsTab = b.dataset.tool;
+    updateTools();
+    saveToolPrefs();
+  });
+}
+
+function updateTools() {
+  if (!el('tools-content')?.querySelector('.tool-tabs')) return;
+  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === toolsTab));
+  document.querySelectorAll('[data-panel-tool]').forEach(p => { p.hidden = p.dataset.panelTool !== toolsTab; });
+  const r = toolRates();
+  const waiting = what => `<span class="chart-caveat">Waiting for today's ${what} rate…</span>`;
+
+  // Zakat (Hanafi): 2.5% of net zakatable wealth held for a lunar year, if it
+  // reaches the nisab. Gold alone → 7.5 tola of gold; any mix → the value of
+  // 52.5 tola of silver.
+  if (r.gold && r.silver) {
+    const goldTola = numIn('tZGold'), karat = +el('tZKarat').value;
+    const goldValue = goldTola * r.gold * (karat / 24);
+    const silverValue = numIn('tZSilver') * r.silver;
+    const others = numIn('tZCash') + numIn('tZBiz') + numIn('tZOwed');
+    const net = Math.max(0, goldValue + silverValue + others - numIn('tZDebt'));
+    const goldOnly = goldTola > 0 && silverValue === 0 && others === 0;
+    const nisabSilver = 52.5 * r.silver, nisabGold = 7.5 * r.gold;
+    const reaches = goldOnly ? goldTola * (karat / 24) >= 7.5 && net > 0 : net >= nisabSilver;
+    el('tZOut').innerHTML = `
+      <div class="tool-big">${net === 0 ? 'Enter your assets above' : reaches ? `Zakat due: <b>${fmtPKR(Math.round(net * 0.025))}</b>` : 'Below nisab — no zakat due'}</div>
+      <div class="tool-sub">Net zakatable wealth ${fmtPKR(Math.round(net))} · nisab ${goldOnly
+        ? `7.5 tola gold (${fmtPKR(Math.round(nisabGold))})` : `52.5 tola silver (${fmtPKR(Math.round(nisabSilver))})`}</div>
+      <span class="chart-caveat">Hanafi rule: gold alone uses the gold nisab, any mix uses the silver nisab. Rates: today's Sarafa Association gold &amp; silver. Wealth must have been held for a lunar year — ask a scholar for your situation.</span>`;
+  } else el('tZOut').innerHTML = waiting('gold & silver');
+
+  // Gold value
+  if (r.gold) {
+    const tola = numIn('tGWeight') * GOLD_UNITS[el('tGUnit').value];
+    const karat = +el('tGKarat').value;
+    const perTola = k => r.gold * (k / 24);
+    el('tGOut').innerHTML = `
+      <div class="tool-big">${fmtPKR(Math.round(tola * perTola(karat)))}</div>
+      <div class="tool-sub">${(tola * TOLA_G).toFixed(2)} g of ${karat}K</div>
+      <div class="tool-table">${[24, 22, 21, 18].map(k => `
+        <div class="${k === karat ? 'on' : ''}"><b>${k}K</b><span>${fmtPKR(Math.round(perTola(k)))} /tola</span><span>${fmtPKR(Math.round(perTola(k) / TOLA_G))} /g</span></div>`).join('')}
+      </div>
+      <span class="chart-caveat">Based on the 24K rate (${esc(r.goldSrc)}) scaled by purity. Jewellers add making charges (mazdoori) when selling and deduct when buying back.</span>`;
+  } else el('tGOut').innerHTML = waiting('gold');
+
+  // Fuel trip
+  const fuel = el('tFuelType').value;
+  const price = r[fuel];
+  const kmpl = numIn('tFuelKmpl');
+  if (price && kmpl) {
+    const perTrip = (numIn('tFuelKm') * 2 / kmpl) * price;
+    el('tFuelOut').innerHTML = `
+      <div class="tool-big">${fmtPKR(Math.round(perTrip))} <small>per round trip</small></div>
+      <div class="tool-sub">${fmtPKR(Math.round(perTrip * numIn('tFuelTrips')))} a month · ${(numIn('tFuelKm') * 2 / kmpl).toFixed(1)} L per trip at ${fmtPKR(price)}/L</div>
+      <span class="chart-caveat">Today's notified ${fuel} price. Real mileage drops in traffic and with the AC on.</span>`;
+  } else el('tFuelOut').innerHTML = price ? '<span class="chart-caveat">Enter your car\'s mileage.</span>' : waiting(fuel);
+}
+
+function renderTools() {
+  if (!el('tools-content')) return;
+  if (!el('tools-content').querySelector('.tool-tabs')) buildTools();
+  updateTools();
+  // the calculators need gold rates from the Markets tab's data
+  if (!state.commodities) {
+    const mod = MODULES.find(m => m.name === 'commodities');
+    if (mod && !mod.loading) loadModule(mod);
+  }
 }
 
 // Consecutive history points more than this many days apart get drawn as a
@@ -898,7 +1178,11 @@ function openChart(si, ii) {
   };
 
   el('chartTitle').textContent = item.name;
+  const lastDate = item.history[item.history.length - 1][0];
+  const yearAgo = priceOn(item, shiftDays(lastDate, -364), 21);
+  const yoy = yearAgo ? ((item.rate - yearAgo) / yearAgo) * 100 : null;
   el('chartSub').textContent = `${item.unit} · ${fmtPKR(item.rate)}` +
+    (yoy != null ? ` · ${yoy >= 0 ? '▲' : '▼'} ${Math.abs(yoy).toFixed(1)}% in a year` : '') +
     (item.range ? ` · Karachi range ${fmtPKR(item.range[0])}–${fmtPKR(item.range[1])}` : '') +
     (pakcomData.official ? (item.liveNow ? ' · weekly PBS history + live today' : ' · weekly, PBS') : '');
   hideChartTip();
@@ -1382,12 +1666,20 @@ const SEARCH_TARGETS = {
   psx: ['markets', 'card-psx'],
   currency: ['pakistan', 'card-currency'],
   pakcom: ['pakistan', 'card-pakcom'],
+  tools: ['pakistan', 'card-tools'],
   movies: ['entertainment', 'card-movies'],
   music: ['entertainment', 'card-music'],
   musicpk: ['entertainment', 'card-musicpk'],
 };
 
-const searchIndex = { crypto: [], commodities: [], psx: [], currency: [], pakcom: [], movies: [], music: [], musicpk: [] };
+const searchIndex = {
+  crypto: [], commodities: [], psx: [], currency: [], pakcom: [], movies: [], music: [], musicpk: [],
+  tools: [
+    { type: 'tools', tool: 'zakat', emoji: '🕌', img: null, name: 'Zakat calculator', sub: 'Nisab from today\'s gold & silver', keys: 'zakat nisab calculator charity' },
+    { type: 'tools', tool: 'gold', emoji: '🥇', img: null, name: 'Gold value calculator', sub: '24K–18K · tola, gram, masha, ratti', keys: 'gold value calculator karat jewellery tola gram' },
+    { type: 'tools', tool: 'fuel', emoji: '⛽', img: null, name: 'Fuel cost calculator', sub: 'Trip & monthly cost at today\'s price', keys: 'fuel cost calculator trip petrol diesel mileage' },
+  ],
+};
 
 function indexCurrency(data) {
   searchIndex.currency = (data?.currencies ?? []).map(c => ({
@@ -1470,7 +1762,7 @@ function runSearch(q) {
   const pct = v => v != null ? `<span class="${v > 0 ? 'positive' : v < 0 ? 'negative' : 'neutral'}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>` : '';
 
   box.innerHTML = results.map(r => `
-    <div class="search-result-item" data-type="${r.type}">
+    <div class="search-result-item" data-type="${r.type}"${r.tool ? ` data-tool-pick="${r.tool}"` : ''}>
       ${safeUrl(r.img) ? `<img class="sri-thumb" src="${safeUrl(r.img)}" alt="">` : `<span class="sri-emoji">${r.emoji}</span>`}
       <div class="sri-info">
         <div class="sri-name">${highlight(esc(r.name), q.trim())}</div>
@@ -1514,6 +1806,7 @@ function initSearch() {
     const item = e.target.closest('[data-type]');
     if (!item) return;
     const [tab, cardId] = SEARCH_TARGETS[item.dataset.type] ?? [];
+    if (item.dataset.toolPick) { toolsTab = item.dataset.toolPick; updateTools(); }
     if (tab) {
       switchTab(tab);
       requestAnimationFrame(() => el(cardId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -1679,11 +1972,11 @@ const MODULES = [
   { name: 'mood', tab: 'markets', endpoint: '/api/mood', targets: ['mood-content'], render: renderMood },
   {
     name: 'commodities', tab: 'markets', endpoint: '/api/commodities', targets: ['commodities-content'],
-    render: data => { state.commodities = data; renderCommodities(data); rebuildTicker(); indexCommodities(data); },
+    render: data => { state.commodities = data; renderCommodities(data); rebuildTicker(); indexCommodities(data); renderTools(); },
   },
   { name: 'psx', tab: 'markets', endpoint: '/api/psx', targets: ['psx-content'], render: d => { renderPSX(d); indexPSX(d); } },
   { name: 'currency', tab: 'pakistan', endpoint: '/api/forex', targets: ['currency-content'], render: d => { renderCurrency(d); indexCurrency(d); } },
-  { name: 'pakcom', tab: 'pakistan', endpoint: '/api/pakcom', targets: ['pakcom-content'], render: d => { renderPakCom(d); indexPakCom(d); } },
+  { name: 'pakcom', tab: 'pakistan', endpoint: '/api/pakcom', targets: ['pakcom-content'], render: d => { renderPakCom(d); indexPakCom(d); renderTools(); } },
   {
     name: 'karachi', tab: 'karachi', endpoint: '/api/karachi', targets: ['prayer-content', 'weather-content'],
     render: d => { renderPrayer(d.prayer); renderWeather(d.weather, d.air); },
@@ -2038,6 +2331,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateNetStatus();
 
   switchTab(initialTab());
+  renderTools();
   tickClock();
 
   // other tabs load in the background so search finds everything and
@@ -2095,7 +2389,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', e => {
     const play = e.target.closest('.play-btn');
     if (play) { togglePreview(play); return; }
-    const pk = e.target.closest('.pakcom-item');
+    const pk = e.target.closest('.pakcom-item, .mover');
     if (pk) openChart(+pk.dataset.si, +pk.dataset.ii);
+    if (e.target.closest('#shareRates')) shareRates();
   });
 });

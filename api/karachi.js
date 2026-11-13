@@ -136,9 +136,9 @@ function parseDawateIslami(html, reference) {
   return reference.map(t => ({ ...t, time: picked[t.name] ?? t.time }));
 }
 
-async function fetchDawateIslami(reference) {
+async function fetchDawateIslamiPage() {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
+  const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
     const res = await fetch(DI_URL, {
       headers: {
@@ -149,7 +149,7 @@ async function fetchDawateIslami(reference) {
       signal: ctrl.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return parseDawateIslami(await res.text(), reference);
+    return await res.text();
   } finally {
     clearTimeout(timer);
   }
@@ -246,7 +246,9 @@ function parseMetar(list) {
 }
 
 async function fetchObservation() {
-  return parseMetar(await getJSON('https://aviationweather.gov/api/data/metar?ids=OPKC&format=json'));
+  // short timeout: the forecast model is a fine fallback, so a slow METAR
+  // service must never hold up the whole card
+  return parseMetar(await getJSON('https://aviationweather.gov/api/data/metar?ids=OPKC&format=json', 3500));
 }
 
 async function fetchAirQuality() {
@@ -259,28 +261,43 @@ async function fetchAirQuality() {
   return { aqi: Math.round(c.us_aqi), pm25: c.pm2_5 };
 }
 
+// Prayer times only change once a day: keep today's result per warm instance
+let prayerCache = null; // { day, value }
+
+// Prefer Dawat-e-Islami's published timetable; the calculated Hanafi times
+// are the reference it's checked against and the fallback. Both pages are
+// fetched at the same time.
+async function getPrayer() {
+  const day = karachiDateParam();
+  if (prayerCache?.day === day) return { ...prayerCache.value, cached: true };
+  const [calc, page] = await Promise.allSettled([fetchPrayer(), fetchDawateIslamiPage()]);
+  if (calc.status !== 'fulfilled') throw calc.reason;
+  const p = calc.value;
+  let diError = null;
+  try {
+    if (page.status !== 'fulfilled') throw page.reason;
+    p.timings = parseDawateIslami(page.value, p.timings);
+    p.method = 'Dawat-e-Islami timetable';
+    p.source = 'dawateislami';
+  } catch (e) {
+    diError = { message: e.message, picked: e.picked ?? null };
+    p.method = 'Calculated · Univ. of Islamic Sciences, Karachi (Dawat-e-Islami unreachable)';
+    p.source = 'calculated';
+  }
+  // only a confirmed timetable is kept for the day; a fallback is retried
+  if (!diError) prayerCache = { day, value: p };
+  return { ...p, diError };
+}
+
 module.exports = async function handler(req, res) {
   const debug = req.query?.debug === '1';
+  const t0 = Date.now();
   const [prayer, weather, air, obs] = await Promise.allSettled([
-    fetchPrayer(), fetchWeather(), fetchAirQuality(), fetchObservation(),
+    getPrayer(), fetchWeather(), fetchAirQuality(), fetchObservation(),
   ]);
   const ok = r => (r.status === 'fulfilled' ? r.value : null);
 
-  // Prefer Dawat-e-Islami's published timetable; the calculated Hanafi times
-  // are the reference it's checked against and the fallback.
-  const p = ok(prayer);
-  let diError = null;
-  if (p) {
-    try {
-      p.timings = await fetchDawateIslami(p.timings);
-      p.method = 'Dawat-e-Islami timetable';
-      p.source = 'dawateislami';
-    } catch (e) {
-      diError = { message: e.message, picked: e.picked ?? null };
-      p.method = 'Calculated · Univ. of Islamic Sciences, Karachi (Dawat-e-Islami unreachable)';
-      p.source = 'calculated';
-    }
-  }
+  const { diError = null, cached = false, ...p } = ok(prayer) ?? {};
 
   // Prefer the real airport observation for "now"; keep the model's day/night
   // flag for the icon. Falls back to the model's current values if METAR fails.
@@ -295,11 +312,18 @@ module.exports = async function handler(req, res) {
     return res.status(502).json({ success: false, message: 'Karachi data is temporarily unavailable' });
   }
 
-  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
+  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=3600');
   res.json({
     success: true,
-    data: { prayer: p, weather: ok(weather), air: ok(air) },
-    ...(debug ? { debug: { dawateIslami: diError ?? 'ok' } } : {}),
+    data: { prayer: ok(prayer) ? p : null, weather: ok(weather), air: ok(air) },
+    ...(debug ? {
+      debug: {
+        ms: Date.now() - t0,
+        prayerCached: cached,
+        dawateIslami: diError ?? 'ok',
+        observation: obs.status === 'fulfilled' ? 'ok' : String(obs.reason?.message),
+      },
+    } : {}),
   });
 };
 

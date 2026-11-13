@@ -18,7 +18,7 @@ module.exports = async function handler(req, res) {
     ]);
 
     const data = await C.enrichAll(rows, 10);
-    res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=1800');
+    res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=21600');
     res.json({ success: true, data, source, ...(debug ? { attempts } : {}) });
   } catch (err) {
     console.error(err);

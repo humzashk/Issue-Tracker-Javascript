@@ -10,7 +10,7 @@ module.exports = async function handler(req, res) {
     const [today, yesterday] = json?.data ?? [];
     if (!today) throw new Error('No index data returned');
 
-    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=3600');
+    res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=21600');
     res.json({
       success: true,
       data: {

@@ -10,6 +10,11 @@
   "background_color": "#0b0b16",
   "theme_color": "#0b0b16",
   "categories": ["finance", "news", "lifestyle"],
+  "shortcuts": [
+    { "name": "Daily Rates", "short_name": "Rates", "description": "Petrol, atta, chicken and more — Karachi prices", "url": "/#pakistan", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Prayer Times", "short_name": "Prayer", "description": "Karachi prayer times and weather", "url": "/#karachi", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Gold & Markets", "short_name": "Markets", "description": "Gold, oil, PSX and crypto", "url": "/#markets", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ],
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

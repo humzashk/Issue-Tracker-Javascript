@@ -15,7 +15,7 @@ const UA =
 const BASE = 'https://www.pbs.gov.pk/wp-content/uploads/2020/07/';
 const POST = 'https://www.pbs.gov.pk/weekly-sensitive-price-indicator-spi-for-the-week-ended-on-';
 const CITY = /^karachi\b/i;
-const WEEKS = 52;
+const WEEKS = 54; // a year plus margin for skipped holiday weeks
 
 // ── minimal xlsx reader ──────────────────────────────────────────────────────
 
@@ -201,7 +201,7 @@ async function getSpiSeries(today) {
   if (Date.now() - missCache.at > 3 * 3600 * 1000) missCache = { at: Date.now(), misses: new Set() };
   const thursdays = recentThursdays(today, WEEKS);
   const report = [];
-  const weeks = await pool(thursdays.map((t, i) => ({ t, recent: i < 3 })), 8, async ({ t, recent }) => {
+  const weeks = await pool(thursdays.map((t, i) => ({ t, recent: i < 3 })), 12, async ({ t, recent }) => {
     for (const day of [t, t - 86400000]) { // Thursday, else Wednesday
       const key = ddmmyyyy(day);
       if (weekCache.has(key)) return { date: ymd(day), items: weekCache.get(key) };
