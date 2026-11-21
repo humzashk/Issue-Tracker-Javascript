@@ -1,6 +1,6 @@
-// Top 10 movies — IMDb "Most Popular Movies" chart (live popularity data),
-// enriched with IMDb rating + Metascore via OMDb when OMDB_API_KEY is set.
+// Top 10 movies — IMDb "Most Popular Movies" chart (live popularity data).
 // Falls back to the iTunes top-movies RSS if the IMDb fetch fails.
+// No API keys: both are public pages/feeds.
 
 async function fetchImdbPopular() {
   const res = await fetch('https://www.imdb.com/chart/moviemeter/', {
@@ -39,23 +39,6 @@ async function fetchItunesFallback() {
   }));
 }
 
-async function fetchRatings(title, apiKey) {
-  try {
-    const url = `https://www.omdbapi.com/?apikey=${apiKey}&t=${encodeURIComponent(title)}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (json.Response !== 'True') return null;
-    return {
-      imdbRating: json.imdbRating !== 'N/A' ? json.imdbRating : null,
-      metascore: json.Metascore !== 'N/A' ? json.Metascore : null,
-      year: json.Year !== 'N/A' ? json.Year : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 module.exports = async function handler(req, res) {
   try {
     let movies;
@@ -68,28 +51,13 @@ module.exports = async function handler(req, res) {
       source = 'Apple iTunes';
     }
 
-    const apiKey = process.env.OMDB_API_KEY;
-
-    const data = await Promise.all(
-      movies.map(async m => {
-        const ratings = apiKey ? await fetchRatings(m.title, apiKey) : null;
-        const parts = [];
-        if (ratings?.year) parts.push(ratings.year);
-        if (ratings?.imdbRating) parts.push(`⭐ IMDb ${ratings.imdbRating}`);
-        if (ratings?.metascore) parts.push(`Metascore ${ratings.metascore}`);
-        return {
-          title: m.title,
-          subtitle: parts.join('  ·  '),
-          image: m.image,
-        };
-      })
-    );
+    const data = movies.map(m => ({ title: m.title, subtitle: '', image: m.image }));
 
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=43200');
     res.json({
       success: true,
       data,
-      source: apiKey ? `${source} + OMDb` : `${source} (set OMDB_API_KEY for ratings)`,
+      source,
     });
   } catch (err) {
     console.error(err);

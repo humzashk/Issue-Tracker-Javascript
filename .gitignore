@@ -1,1 +1,10 @@
 node_modules/
+
+# never commit secrets or local config
+.env
+.env.*
+*.pem
+*.key
+*.p12
+id_rsa*
+.vercel/

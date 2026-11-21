@@ -98,11 +98,24 @@ When the health check says **"SSGC has posted a new notice"** (or the schedule e
 | June 2027 | Federal budget: electricity/gas tariffs, fuel levy and tax changes flow into PBS and fuel prices | none |
 | Any time | A source changes its website | the health check tells you (§2) |
 
-## 6. Free-plan limits (all comfortably within)
+## 6. Costs and secrets: why this site costs Rs 0 and has nothing to leak
 
-- **Vercel Hobby**: 12 serverless functions allowed, 11 used. Don't add new files to `/api` unless their name starts with `_` (helpers don't count).
-- **GitHub Actions**: free and unlimited for public repositories. The health check uses about 1 minute a day.
-- **No API keys, no paid services.** Every source is a public website or a free public API.
+**No keys or passwords exist anywhere in this project.** It was audited on 21 Nov 2026: all files and every commit in the history, on all branches. No API keys, tokens, passwords or private keys were found. Every source is a public website or a free API that needs no sign-up. The optional OMDb movie-ratings key was removed, so there is nothing to configure.
+
+The only "token" mentioned is `GITHUB_TOKEN` in the health-check workflow. GitHub creates it automatically for each run, it expires when the run ends, and it never appears in the code or logs.
+
+**What runs where, and what it costs:**
+- **Vercel Hobby plan**: free. Hobby has no payment method, so it cannot bill you. If you ever hit a limit, Vercel pauses or asks you to upgrade; it never charges. 11 of the 12 allowed functions are used. Don't add new files to `/api` unless their name starts with `_` (helpers don't count).
+- **Vercel Web Analytics** (the script in `index.html`): included free on Hobby, with a monthly allowance. Past it, collection simply stops until next month.
+- **GitHub (public repository + Actions)**: free and unlimited for public repositories. The health check uses about 1 minute a day.
+- **Data sources**: PBS, Business Recorder, K-Electric, SSGC, PSX, CoinGecko, open.er-api, Aladhan, Open-Meteo and the rest are all free public pages and APIs.
+- **The one library** (`unpdf`, for K-Electric's PDF): free, MIT licence.
+
+**Keep it that way:**
+- Never paste a key, token or password into any file here. The repository is public, so anything committed is visible to the world forever, even after deleting it. `.gitignore` already blocks `.env` and key files.
+- If a future feature ever needs a key, put it in **Vercel → project → Settings → Environment Variables**, never in the code.
+- If GitHub or Vercel ever emails "secret detected", treat that key as stolen: revoke it at the service that issued it, then remove it.
+- Ignore emails offering to "upgrade to Pro". Nothing here needs it.
 
 ## 7. When you have a developer (or Claude) again
 
