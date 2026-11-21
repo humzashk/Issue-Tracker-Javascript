@@ -1494,8 +1494,8 @@ function renderWeather(w, air) {
       <div class="wx-days">${days}</div>
     </div>
     <div class="meta">${c.source === 'observed' && c.observedAt
-      ? `Now: observed at Jinnah Airport, ${esc(new Date(c.observedAt).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: 'numeric', minute: '2-digit' }))} · Forecast: Open-Meteo`
-      : 'Open-Meteo model for Karachi'}</div>
+      ? `Now: observed at Jinnah Airport, ${esc(new Date(c.observedAt).toLocaleTimeString('en-US', { timeZone: 'Asia/Karachi', hour: 'numeric', minute: '2-digit' }))} · Forecast: ${esc(w.source || 'Open-Meteo')}`
+      : `${esc(w.source || 'Open-Meteo')} forecast for Karachi`}</div>
   `);
 }
 

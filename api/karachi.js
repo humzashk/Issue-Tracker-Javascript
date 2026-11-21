@@ -156,7 +156,95 @@ async function fetchDawateIslamiPage() {
   }
 }
 
+// Open-Meteo is the main forecast. Its free tier limits requests per IP
+// address, and Vercel's servers share addresses with many other sites, so it
+// sometimes refuses us — then MET Norway (Norway's national weather service,
+// free, no key; it only asks callers to identify themselves) takes over.
 async function fetchWeather() {
+  try {
+    return { ...(await fetchOpenMeteo()), source: 'Open-Meteo' };
+  } catch (e) {
+    const w = await fetchMetNorway();
+    return { ...w, source: 'MET Norway', primaryError: e.message };
+  }
+}
+
+const METNO_UA = 'LiveRates/1.0 github.com/humzashk/Issue-Tracker-Javascript';
+
+// MET Norway symbol codes → WMO-style codes the card's icons use
+function metnoCode(symbol) {
+  const s = String(symbol || '').replace(/_(day|night|polartwilight)$/, '');
+  if (/thunder/.test(s)) return 95;
+  if (/snow|sleet/.test(s)) return 71;
+  if (/heavyrain/.test(s)) return s.includes('showers') ? 82 : 65;
+  if (/lightrain/.test(s)) return s.includes('showers') ? 80 : 61;
+  if (/rain/.test(s)) return s.includes('showers') ? 81 : 63;
+  if (s === 'fog') return 45;
+  if (s === 'cloudy') return 3;
+  if (s === 'partlycloudy') return 2;
+  if (s === 'fair') return 1;
+  return 0; // clearsky
+}
+
+async function fetchMetNorway() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 7000);
+  let j;
+  try {
+    const res = await fetch(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${LAT.toFixed(4)}&lon=${LON.toFixed(4)}`, {
+      headers: { 'User-Agent': METNO_UA, Accept: 'application/json' },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`MET Norway HTTP ${res.status}`);
+    j = await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+  const ts = j?.properties?.timeseries ?? [];
+  if (!ts.length) throw new Error('MET Norway: no forecast');
+
+  const localDate = t => new Date(Date.parse(t) + 5 * 3600 * 1000).toISOString().slice(0, 10);
+  const localHour = t => new Date(Date.parse(t) + 5 * 3600 * 1000).getUTCHours();
+  const days = new Map();
+  for (const p of ts) {
+    const d = localDate(p.time);
+    const temp = p.data?.instant?.details?.air_temperature;
+    const day = days.get(d) ?? days.set(d, { date: d, max: -Infinity, min: Infinity, codes: [], rainMm: 0 }).get(d);
+    if (Number.isFinite(temp)) { day.max = Math.max(day.max, temp); day.min = Math.min(day.min, temp); }
+    const next = p.data?.next_6_hours ?? p.data?.next_1_hours;
+    // the daytime outlook describes the day best
+    const h = localHour(p.time);
+    if (next?.summary?.symbol_code && h >= 6 && h <= 18) day.codes.push(metnoCode(next.summary.symbol_code));
+    day.rainMm += p.data?.next_1_hours?.details?.precipitation_amount ?? 0;
+  }
+  const out = [...days.values()].filter(d => Number.isFinite(d.max) && d.max !== d.min).slice(0, 7).map(d => ({
+    date: d.date,
+    code: d.codes.length ? Math.max(...d.codes) : 0,
+    max: Math.round(d.max * 10) / 10,
+    min: Math.round(d.min * 10) / 10,
+    rain: null, // MET Norway gives amounts, not chances
+    uv: null,
+  }));
+
+  const now = ts[0];
+  const det = now.data?.instant?.details ?? {};
+  const sym = now.data?.next_1_hours?.summary?.symbol_code ?? '';
+  const rh = det.relative_humidity ?? null;
+  return {
+    current: {
+      temp: det.air_temperature,
+      feelsLike: rh != null ? feelsLike(det.air_temperature, rh) : det.air_temperature,
+      humidity: rh != null ? Math.round(rh) : null,
+      wind: Number.isFinite(det.wind_speed) ? det.wind_speed * 3.6 : null,
+      code: metnoCode(sym),
+      isDay: !/_night/.test(sym),
+      time: now.time,
+    },
+    days: out,
+  };
+}
+
+async function fetchOpenMeteo() {
   const j = await getJSON(
     'https://api.open-meteo.com/v1/forecast' +
       `?latitude=${LAT}&longitude=${LON}&timezone=${encodeURIComponent(TZ)}&forecast_days=7` +
@@ -202,7 +290,9 @@ function feelsLike(t, rh) {
   const hi = -42.379 + 2.04901523 * F + 10.14333127 * rh - 0.22475541 * F * rh
     - 0.00683783 * F * F - 0.05481717 * rh * rh + 0.00122874 * F * F * rh
     + 0.00085282 * F * rh * rh - 0.00000199 * F * F * rh * rh;
-  return ((hi - 32) * 5) / 9;
+  // the formula is only valid when it adds heat; in dry air it can dip below
+  // the real temperature, which would be nonsense
+  return Math.max(t, ((hi - 32) * 5) / 9);
 }
 
 // METAR weather/cloud groups → a WMO-style code (what the card's icons use)
@@ -314,6 +404,8 @@ module.exports = async function handler(req, res) {
   // Prefer the real airport observation for "now"; keep the model's day/night
   // flag for the icon. Falls back to the model's current values if METAR fails.
   const w = ok(weather);
+  const weatherSource = w?.source ?? null, primaryError = w?.primaryError ?? null;
+  if (w) { delete w.primaryError; }
   if (w && ok(obs)) {
     w.current = { ...ok(obs), isDay: w.current.isDay, source: 'observed' };
   } else if (w) {
@@ -324,7 +416,9 @@ module.exports = async function handler(req, res) {
     return res.status(502).json({ success: false, message: 'Karachi data is temporarily unavailable' });
   }
 
-  res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=3600');
+  // a partial answer (no forecast or prayer times) is cached only briefly
+  const complete = ok(prayer) && ok(weather);
+  res.setHeader('Cache-Control', complete ? 's-maxage=900, stale-while-revalidate=3600' : 's-maxage=60');
   res.json({
     success: true,
     data: { prayer: ok(prayer) ? p : null, weather: ok(weather), air: ok(air) },
@@ -334,6 +428,8 @@ module.exports = async function handler(req, res) {
         prayerCached: cached,
         dawateIslami: diError ?? 'ok',
         observation: obs.status === 'fulfilled' ? 'ok' : String(obs.reason?.message),
+        forecast: weather.status === 'fulfilled' ? weatherSource + (primaryError ? ` (Open-Meteo: ${primaryError})` : '') : String(weather.reason?.message),
+        air: air.status === 'fulfilled' ? 'ok' : String(air.reason?.message),
       },
     } : {}),
   });
