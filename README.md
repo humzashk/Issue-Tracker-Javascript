@@ -38,3 +38,7 @@ Optional:
 - **Analytics**: Vercel dashboard → project → **Analytics** → Enable (free). The script is already in the page.
 
 Most endpoints accept `?debug=1` to show which upstream source answered.
+
+## Keeping it healthy
+
+A free **daily health check** (GitHub Actions → *Site health check*) tests every rate on the live site and opens a single GitHub issue, which emails you, when something needs attention. It closes the issue by itself once things are fine. See **[MAINTENANCE.md](MAINTENANCE.md)** for what updates automatically, the one manual job (SSGC gas hours), quick fixes and what to expect in the coming months.

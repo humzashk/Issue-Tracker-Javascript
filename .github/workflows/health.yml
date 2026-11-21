@@ -1,0 +1,33 @@
+name: Site health check
+
+# Once a day, check every rate on the live site and keep one GitHub issue
+# up to date with anything that needs attention. Free (public repository),
+# stores nothing. See .github/health/check.mjs and MAINTENANCE.md.
+on:
+  schedule:
+    - cron: '23 13 * * *'   # 6:23 PM Karachi — after the day's gold & fuel updates
+  workflow_dispatch: {}      # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: read
+  issues: write
+  actions: write   # lets the check re-enable itself so GitHub doesn't pause it
+
+concurrency:
+  group: health
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/health
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node .github/health/check.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2202,6 +2202,14 @@ function gasHTML() {
   const g = utilData?.gas;
   const head = '<div class="util-title">🔥 Gas <span>SSGC supply hours</span></div>';
   if (!g?.slots?.length) return `${head}<div class="empty-message">Gas hours unavailable right now.</div>`;
+  const notice0 = safeUrl(g.notice) ? ` <a class="link-btn" href="${safeUrl(g.notice)}" target="_blank" rel="noopener">${g.changed ? 'SSGC\'s latest notice' : 'SSGC\'s last notice'}</a>` : '';
+  // a schedule past its end date must not be presented as current
+  if (g.validUntil && karachiToday() > g.validUntil) {
+    return `${head}
+      <div class="util-status off">Schedule ended</div>
+      <div class="util-sub">The ${esc(g.note || 'SSGC gas schedule')} ran until ${esc(fmtShortDate(g.validUntil))}. Supply hours now depend on SSGC's latest announcement.</div>
+      <div class="meta">Check SSGC (helpline 1199) for current hours ·${notice0}</div>`;
+  }
   const windows = g.slots.map(s => [hhmmToSec(s.start) / 60, hhmmToSec(s.end) / 60]);
   const st = windowStatus(windows, minNow());
   const notice = safeUrl(g.notice) ? `<a class="link-btn" href="${safeUrl(g.notice)}" target="_blank" rel="noopener">${g.changed ? 'See the new notice' : 'official notice'}</a>` : '';

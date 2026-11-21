@@ -1,12 +1,25 @@
 {
   "gas": {
     "announced": "2026-11-04",
-    "note": "SSGC winter schedule for homes in Sindh and Balochistan",
+    "note": "SSGC winter schedule (Nov–Feb) for homes in Sindh and Balochistan",
     "image": "https://www.ssgc.com.pk/web/wp-content/uploads/2026/11/gas_timings.webp",
     "slots": [
-      { "label": "Breakfast", "start": "06:30", "end": "09:00" },
-      { "label": "Lunch", "start": "12:00", "end": "14:30" },
-      { "label": "Dinner", "start": "18:00", "end": "21:00" }
-    ]
+      {
+        "label": "Breakfast",
+        "start": "06:30",
+        "end": "09:00"
+      },
+      {
+        "label": "Lunch",
+        "start": "12:00",
+        "end": "14:30"
+      },
+      {
+        "label": "Dinner",
+        "start": "18:00",
+        "end": "21:00"
+      }
+    ],
+    "validUntil": "2027-02-28"
   }
 }

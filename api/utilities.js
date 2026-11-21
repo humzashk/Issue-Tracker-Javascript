@@ -9,6 +9,8 @@
 //
 // Gas: SSGC announces supply hours as a picture on its homepage, which can't
 //   be read by a program. The announced hours live in data/utilities.json.
+//   Each schedule carries a validUntil date (the winter plan runs Nov–Feb);
+//   after it the card stops claiming hours and points to SSGC instead.
 //   The homepage is checked on every refresh, and if SSGC has posted a
 //   different notice image the response says so, so the card can warn that
 //   the hours may have changed and link to the new notice.
@@ -159,6 +161,7 @@ async function getGas() {
   return {
     slots: saved.slots,
     announced: saved.announced,
+    validUntil: saved.validUntil ?? null,
     note: saved.note,
     notice: liveImage ?? saved.image,
     // a different image on SSGC's site means a newer announcement than ours
